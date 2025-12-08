@@ -36,7 +36,6 @@ const {
   pasteItem,
   deleteItem,
   toggleSensitive,
-  getImageSrc,
   scrollToSelected,
   setupClipboardListeners,
 } = useClipboard();
