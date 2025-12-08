@@ -69,6 +69,7 @@ jobs:
           args: ${{ matrix.args }}
 
       - name: Rename and upload latest.json
+        shell: bash
         run: |
           # Find the generated latest.json (it might be in different paths depending on OS)
           # We copy it to a unique name to avoid overwriting when downloading artifacts
