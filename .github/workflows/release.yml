@@ -67,3 +67,40 @@ jobs:
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
+
+      - name: Rename and upload latest.json
+        run: |
+          # Find the generated latest.json (it might be in different paths depending on OS)
+          # We copy it to a unique name to avoid overwriting when downloading artifacts
+          find src-tauri/target -name "latest.json" -type f -exec cp {} latest-${{ matrix.platform }}-${{ strategy.job-index }}.json \;
+          ls -l latest-*.json || echo "No latest.json found"
+
+      - name: Upload latest.json artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: latest-jsons
+          path: latest-*.json
+          if-no-files-found: ignore
+
+  publish-latest-json:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download latest.json artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: latest-jsons
+          path: latest_jsons
+
+      - name: Merge latest.json
+        run: node scripts/merge-latest-json.js latest_jsons latest.json
+
+      - name: Upload merged latest.json to Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: latest.json
+          token: ${{ secrets.GITHUB_TOKEN }}
