@@ -36,14 +36,34 @@ async function updater() {
   // 2. Get the release by tag
   let release;
   try {
+    console.log(`Attempting to fetch release for tag: ${tagName}`);
     const { data } = await github.rest.repos.getReleaseByTag({
       ...options,
       tag: tagName,
     });
     release = data;
   } catch (e) {
-    console.error(`Error fetching release for tag ${tagName}:`, e);
-    return;
+    console.log(
+      `Could not get release by tag ${tagName} (status: ${e.status}). It might be a draft.`
+    );
+    try {
+      // Fallback: List releases (includes drafts for authenticated users)
+      const { data: releases } = await github.rest.repos.listReleases({
+        ...options,
+        per_page: 20,
+      });
+
+      release = releases.find((r) => r.tag_name === tagName);
+
+      if (!release) {
+        console.error(`Error: Release for tag ${tagName} not found in list.`);
+        process.exit(1);
+      }
+      console.log(`Found release via listReleases: ${release.id}`);
+    } catch (listError) {
+      console.error("Error listing releases:", listError);
+      process.exit(1);
+    }
   }
 
   // 3. Construct latest.json structure
