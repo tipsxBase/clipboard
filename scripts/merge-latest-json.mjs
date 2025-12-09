@@ -1,5 +1,5 @@
-const fs = require("fs");
-const path = require("path");
+import fs from "fs";
+import path from "path";
 
 const inputDir = process.argv[2] || ".";
 const outputFile = process.argv[3] || "latest.json";

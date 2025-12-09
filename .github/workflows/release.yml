@@ -105,7 +105,7 @@ jobs:
           merge-multiple: true
 
       - name: Merge latest.json
-        run: node scripts/merge-latest-json.js latest_jsons latest.json
+        run: node scripts/merge-latest-json.mjs latest_jsons latest.json
 
       - name: Upload merged latest.json to Release
         uses: softprops/action-gh-release@v2
