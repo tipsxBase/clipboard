@@ -77,6 +77,7 @@ pub fn recognize_text(image_path: &str) -> Result<String, String> {
 #[cfg(target_os = "windows")]
 use windows::{
     core::HSTRING,
+    Foundation,
     Graphics::Imaging::BitmapDecoder,
     Media::Ocr::OcrEngine,
     Storage::{FileAccessMode, StorageFile},
