@@ -155,12 +155,7 @@ async fn recognize_text_async(image_path: &str) -> Result<String, String> {
         || bitmap.BitmapAlphaMode().map_err(|e| e.to_string())? != BitmapAlphaMode::Premultiplied
     {
         log::info!("Converting bitmap format to Bgra8 Premultiplied");
-        SoftwareBitmap::Convert(
-            &bitmap,
-            BitmapPixelFormat::Bgra8,
-            BitmapAlphaMode::Premultiplied,
-        )
-        .map_err(|e| {
+        SoftwareBitmap::Convert(&bitmap, BitmapPixelFormat::Bgra8).map_err(|e| {
             log::error!("SoftwareBitmap::Convert failed: {}", e);
             e.to_string()
         })?
