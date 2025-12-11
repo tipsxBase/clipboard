@@ -96,7 +96,7 @@ async fn recognize_text_async(image_path: &str) -> Result<String, String> {
         log::error!("Failed to canonicalize path: {}", e);
         e.to_string()
     })?;
-    let path_string = absolute_path.to_string_lossy().to_string();
+    let mut path_string = absolute_path.to_string_lossy().to_string();
 
     if path_string.starts_with(r"\\?\") {
         path_string = path_string[4..].to_string();
