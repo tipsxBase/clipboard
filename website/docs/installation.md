@@ -55,6 +55,31 @@ To install:
 1. Click the **More info** link in the popup.
 2. Click the **Run anyway** button at the bottom.
 
+### Windows: WebView2 Startup Failure
+
+If you see an error like:
+
+```
+failed to create webview: WebView2 error: WindowsErrorError { code: HRESULT(0x80004002), ... }
+```
+
+This means the WebView2 Runtime is not installed on your system. Edge browser and WebView2 are separate components; installing Edge does not automatically install WebView2 Runtime.
+
+**Solution:**
+
+1. Visit the [WebView2 official download page](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) and install WebView2 Runtime.
+2. After installation, restart your computer and try running the app again.
+3. If the issue persists, update Windows 10 to the latest version.
+
+**How to check if WebView2 is installed:**
+
+- Open "Control Panel" → "Programs and Features", look for "Microsoft Edge WebView2 Runtime".
+- Or run the following command in Command Prompt:
+  ```
+  reg query "HKLM\SOFTWARE\Microsoft\EdgeUpdate\Clients" /s | findstr WebView2
+  ```
+  If there is output, WebView2 is installed.
+
 ## Automatic Updates
 
 The application has built-in automatic update functionality. When a new version is released, the app will automatically detect it in the background and prompt you to update. Simply click confirm, and the app will automatically download and install the latest version.

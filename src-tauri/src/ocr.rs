@@ -97,6 +97,10 @@ async fn recognize_text_async(image_path: &str) -> Result<String, String> {
         e.to_string()
     })?;
     let path_string = absolute_path.to_string_lossy().to_string();
+
+    if path_string.starts_with(r"\\?\") {
+        path_string = path_string[4..].to_string();
+    }
     log::info!("Absolute path: {}", path_string);
 
     let file = StorageFile::GetFileFromPathAsync(&HSTRING::from(&path_string))

@@ -55,6 +55,31 @@ Clipboard Manager 支持主流的桌面操作系统。请根据您的系统选�
 1. 点击弹窗中的 **“更多信息” (More info)** 链接。
 2. 点击底部的 **“仍要运行” (Run anyway)** 按钮。
 
+### Windows: WebView2 启动失败
+
+如果你遇到如下报错：
+
+```
+failed to create webview: WebView2 error: WindowsErrorError { code: HRESULT(0x80004002), ... }
+```
+
+这说明你的系统未安装 WebView2 Runtime。Edge 浏览器和 WebView2 是两个独立组件，安装 Edge 浏览器并不会自动安装 WebView2 Runtime。
+
+**解决方法：**
+
+1. 访问 [WebView2 官方下载页面](https://developer.microsoft.com/zh-cn/microsoft-edge/webview2/) 并安装 WebView2 Runtime。
+2. 安装完成后重启电脑，再次运行应用。
+3. 如问题仍未解决，建议升级 Windows 10 到最新版本。
+
+**如何检查是否已安装 WebView2：**
+
+- 打开“控制面板” → “程序和功能”，查找 “Microsoft Edge WebView2 Runtime”。
+- 或在命令行输入：
+  ```
+  reg query "HKLM\SOFTWARE\Microsoft\EdgeUpdate\Clients" /s | findstr WebView2
+  ```
+  有输出则已安装。
+
 ## 自动更新
 
 应用内置了自动更新功能。当有新版本发布时，应用会在后台自动检测并提示您进行更新。您只需点击确认，应用将自动下载并安装最新版本。
