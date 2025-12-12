@@ -93,127 +93,109 @@ pub fn recognize_text(image_path: &str) -> Result<String, String> {
 #[cfg(target_os = "windows")]
 async fn recognize_text_async(image_path: &str) -> Result<String, String> {
     log::info!("recognize_text_async called with path: {}", image_path);
-    let original_path = image_path.to_string();
-    log::info!("Original path: {}", original_path);
-    let path = std::path::Path::new(&original_path);
+
+    // 1. 简化路径处理 - 使用标准库方法
+    let path = std::path::Path::new(image_path);
+
+    // 2. 获取绝对路径（保留 UNC 前缀）
     let absolute_path = dunce::canonicalize(path).map_err(|e| {
         log::error!("Failed to canonicalize path: {}", e);
         e.to_string()
     })?;
-    let mut path_string = absolute_path.to_string_lossy().to_string();
-    // Remove file scheme if present (file:///C:/...)
-    if path_string.starts_with("file:///") {
-        path_string = path_string.trim_start_matches("file:///").to_string();
-        path_string = path_string.replace('/', "\\");
-    }
 
-    // Replace full-width colon (Chinese punctuation) with ASCII colon
-    if path_string.contains('：') {
-        path_string = path_string.replace('：', ":");
-    }
+    // 3. 直接使用规范化后的路径（不要移除 "\\?\"）
+    let path_string = absolute_path.to_string_lossy().to_string();
+    log::info!("Using path: {}", path_string);
 
-    // Remove Windows extended-length path prefix "\\?\" if present
-    if path_string.starts_with("\\\\?\\") {
-        path_string = path_string.trim_start_matches("\\\\?\\").to_string();
-    }
-    log::info!("Absolute path: {}", path_string);
-
-    let file = StorageFile::GetFileFromPathAsync(&HSTRING::from(&path_string))
-        .map_err(|e| {
-            log::error!("GetFileFromPathAsync failed: {}", e);
-            e.to_string()
-        })?
-        .await
-        .map_err(|e| {
-            log::error!("GetFileFromPathAsync await failed: {}", e);
-            e.to_string()
-        })?;
-    log::info!("File opened successfully");
-
-    let stream = file
-        .OpenAsync(FileAccessMode::Read)
-        .map_err(|e| {
-            log::error!("OpenAsync failed: {}", e);
-            e.to_string()
-        })?
-        .await
-        .map_err(|e| {
-            log::error!("OpenAsync await failed: {}", e);
-            e.to_string()
-        })?;
-    log::info!("Stream opened successfully");
-
-    let decoder = BitmapDecoder::CreateAsync(&stream)
-        .map_err(|e| {
-            log::error!("BitmapDecoder::CreateAsync failed: {}", e);
-            e.to_string()
-        })?
-        .await
-        .map_err(|e| {
-            log::error!("BitmapDecoder::CreateAsync await failed: {}", e);
-            e.to_string()
-        })?;
-    log::info!("Decoder created successfully");
-
-    let bitmap = decoder
-        .GetSoftwareBitmapAsync()
-        .map_err(|e| {
-            log::error!("GetSoftwareBitmapAsync failed: {}", e);
-            e.to_string()
-        })?
-        .await
-        .map_err(|e| {
-            log::error!("GetSoftwareBitmapAsync await failed: {}", e);
-            e.to_string()
-        })?;
-    log::info!("Bitmap obtained successfully");
-
-    // Ensure the bitmap is in the correct format for OCR (Bgra8, Premultiplied)
-    let bitmap = if bitmap.BitmapPixelFormat().map_err(|e| e.to_string())?
-        != BitmapPixelFormat::Bgra8
-        || bitmap.BitmapAlphaMode().map_err(|e| e.to_string())? != BitmapAlphaMode::Premultiplied
-    {
-        log::info!("Converting bitmap format to Bgra8 Premultiplied");
-        SoftwareBitmap::Convert(&bitmap, BitmapPixelFormat::Bgra8).map_err(|e| {
-            log::error!("SoftwareBitmap::Convert failed: {}", e);
-            e.to_string()
-        })?
-    } else {
-        log::info!("Bitmap format is already correct");
-        bitmap
+    // 4. 尝试加载文件（添加更多错误信息）
+    let file = match StorageFile::GetFileFromPathAsync(&HSTRING::from(&path_string)) {
+        Ok(op) => op,
+        Err(e) => {
+            log::error!("GetFileFromPathAsync failed with error: {:?}", e);
+            return Err(format!("Failed to access file: {}", e));
+        }
     };
 
-    let engine = OcrEngine::TryCreateFromUserProfileLanguages().map_err(|e| {
-        log::error!("TryCreateFromUserProfileLanguages failed: {}", e);
-        e.to_string()
+    let file = file.await.map_err(|e| {
+        log::error!("Failed to get file: {:?}", e);
+        format!("File operation failed: {}", e)
     })?;
-    log::info!("OcrEngine created successfully");
 
-    let result = engine
-        .RecognizeAsync(&bitmap)
-        .map_err(|e| {
-            log::error!("RecognizeAsync failed: {}", e);
-            e.to_string()
-        })?
+    log::info!("File opened: {:?}", file);
+
+    // 5. 打开文件流
+    let stream = file
+        .OpenAsync(FileAccessMode::Read)
+        .map_err(|e| format!("Failed to open file: {}", e))?
         .await
-        .map_err(|e| {
-            log::error!("RecognizeAsync await failed: {}", e);
-            e.to_string()
-        })?;
-    log::info!("Recognition completed");
+        .map_err(|e| format!("Failed to open stream: {}", e))?;
 
-    let lines = result.Lines().map_err(|e| e.to_string())?;
-    let mut full_text = String::new();
+    // 6. 创建解码器
+    let decoder = BitmapDecoder::CreateAsync(&stream)
+        .map_err(|e| format!("Failed to create decoder: {}", e))?
+        .await
+        .map_err(|e| format!("Failed to get decoder: {}", e))?;
 
-    for line in lines {
-        let text = line.Text().map_err(|e| e.to_string())?;
-        full_text.push_str(&text.to_string_lossy());
-        full_text.push('\n');
+    // 7. 获取位图
+    let mut bitmap = decoder
+        .GetSoftwareBitmapAsync()
+        .map_err(|e| format!("Failed to get bitmap: {}", e))?
+        .await
+        .map_err(|e| format!("Failed to load bitmap: {}", e))?;
+
+    log::info!("Bitmap format: {:?}", bitmap.BitmapPixelFormat().ok());
+
+    // 8. 正确转换位图格式（如果需要）
+    // Windows OCR 要求像素格式是 Bgra8
+    let required_format = BitmapPixelFormat::Bgra8;
+    let current_format = bitmap
+        .BitmapPixelFormat()
+        .unwrap_or(BitmapPixelFormat::Bgra8);
+
+    if current_format != required_format {
+        log::info!("Converting bitmap from {:?} to Bgra8", current_format);
+        // 正确的转换方法
+        bitmap = SoftwareBitmap::Convert(&bitmap, BitmapPixelFormat::Bgra8)
+            .map_err(|e| format!("Failed to convert bitmap format: {}", e))?;
     }
 
-    log::info!("OCR Result length: {}", full_text.len());
+    // 9. 创建 OCR 引擎（尝试指定中文）
+    let engine = OcrEngine::TryCreateFromUserProfileLanguages()
+        .map_err(|e| format!("Failed to create OCR engine: {}", e))?;
+    log::info!("OcrEngine created successfully");
+    // 10. 执行 OCR
+    let result = engine
+        .RecognizeAsync(&bitmap)
+        .map_err(|e| format!("Failed to start recognition: {}", e))?
+        .await
+        .map_err(|e| format!("Recognition failed: {}", e))?;
 
-    Ok(full_text.trim().to_string())
+    // 11. 提取文本
+    let lines = result
+        .Lines()
+        .map_err(|e| format!("Failed to get lines: {}", e))?;
+    let mut full_text = String::new();
+    let line_count = lines.Size().map_err(|e| e.to_string())?;
+
+    log::info!("Found {} lines", line_count);
+
+    for i in 0..line_count {
+        if let Ok(line) = lines.GetAt(i) {
+            if let Ok(text) = line.Text() {
+                full_text.push_str(&text.to_string());
+                full_text.push('\n');
+            }
+        }
+    }
+
+    let trimmed_text = full_text.trim().to_string();
+    log::info!(
+        "OCR Result ({} chars): {}",
+        trimmed_text.len(),
+        trimmed_text
+    );
+
+    Ok(trimmed_text)
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
