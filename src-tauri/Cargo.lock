@@ -841,6 +841,7 @@ dependencies = [
  "chrono",
  "clipboard-master",
  "cocoa",
+ "dunce",
  "home",
  "image",
  "log",

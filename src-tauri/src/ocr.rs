@@ -75,6 +75,8 @@ pub fn recognize_text(image_path: &str) -> Result<String, String> {
 }
 
 #[cfg(target_os = "windows")]
+use dunce;
+#[cfg(target_os = "windows")]
 use windows::{
     core::HSTRING,
     Foundation,
@@ -91,15 +93,28 @@ pub fn recognize_text(image_path: &str) -> Result<String, String> {
 #[cfg(target_os = "windows")]
 async fn recognize_text_async(image_path: &str) -> Result<String, String> {
     log::info!("recognize_text_async called with path: {}", image_path);
-    let path = std::path::Path::new(image_path);
-    let absolute_path = std::fs::canonicalize(path).map_err(|e| {
+    let original_path = image_path.to_string();
+    log::info!("Original path: {}", original_path);
+    let path = std::path::Path::new(&original_path);
+    let absolute_path = dunce::canonicalize(path).map_err(|e| {
         log::error!("Failed to canonicalize path: {}", e);
         e.to_string()
     })?;
     let mut path_string = absolute_path.to_string_lossy().to_string();
+    // Remove file scheme if present (file:///C:/...)
+    if path_string.starts_with("file:///") {
+        path_string = path_string.trim_start_matches("file:///").to_string();
+        path_string = path_string.replace('/', "\\");
+    }
 
-    if path_string.starts_with(r"\\?\") {
-        path_string = path_string[4..].to_string();
+    // Replace full-width colon (Chinese punctuation) with ASCII colon
+    if path_string.contains('：') {
+        path_string = path_string.replace('：', ":");
+    }
+
+    // Remove Windows extended-length path prefix "\\?\" if present
+    if path_string.starts_with("\\\\?\\") {
+        path_string = path_string.trim_start_matches("\\\\?\\").to_string();
     }
     log::info!("Absolute path: {}", path_string);
 
