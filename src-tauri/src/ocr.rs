@@ -88,136 +88,148 @@ use dunce;
 use windows::{
     core::HSTRING,
     Foundation,
-    Graphics::Imaging::{BitmapAlphaMode, BitmapDecoder, BitmapPixelFormat, SoftwareBitmap},
+    Graphics::Imaging::{BitmapDecoder, BitmapPixelFormat, SoftwareBitmap},
     Media::Ocr::OcrEngine,
     Storage::{FileAccessMode, StorageFile},
 };
 
 #[cfg(target_os = "windows")]
 pub async fn recognize_text(image_path: &str) -> Result<String, String> {
-    log::info!("recognize_text called with path: {}", image_path);
+    let path = image_path.to_string();
+    tauri::async_runtime::spawn_blocking(move || {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| e.to_string())?;
 
-    let original_path = image_path.to_string();
-    log::info!("Original path: {}", original_path);
+        rt.block_on(async {
+            log::info!("recognize_text called with path: {}", path);
 
-    // Pre-clean path to handle common issues before canonicalize
-    let mut cleaned_path = original_path.clone();
-    // Remove file scheme if present (file:///C:/...)
-    if cleaned_path.starts_with("file:///") {
-        cleaned_path = cleaned_path.trim_start_matches("file:///").to_string();
-        cleaned_path = cleaned_path.replace('/', "\\");
-    }
-    // Replace full-width colon (Chinese punctuation) with ASCII colon
-    if cleaned_path.contains('：') {
-        cleaned_path = cleaned_path.replace('：', ":");
-    }
-    // Remove Windows extended-length path prefix "\\?\" if present
-    if cleaned_path.starts_with("\\\\?\\") {
-        cleaned_path = cleaned_path.trim_start_matches("\\\\?\\").to_string();
-    }
+            let original_path = path;
+            log::info!("Original path: {}", original_path);
 
-    // 1. 简化路径处理 - 使用标准库方法
-    let path = std::path::Path::new(&cleaned_path);
-
-    // 2. 获取绝对路径（保留 UNC 前缀）
-    let absolute_path = dunce::canonicalize(path).map_err(|e| {
-        log::error!("Failed to canonicalize path: {}", e);
-        e.to_string()
-    })?;
-
-    // 3. 直接使用规范化后的路径（不要移除 "\\?\"）
-    let path_string = absolute_path.to_string_lossy().to_string();
-    log::info!("Using path: {}", path_string);
-
-    // 4. 尝试加载文件（添加更多错误信息）
-    let file = match StorageFile::GetFileFromPathAsync(&HSTRING::from(&path_string)) {
-        Ok(op) => op,
-        Err(e) => {
-            log::error!("GetFileFromPathAsync failed with error: {:?}", e);
-            return Err(format!("Failed to access file: {}", e));
-        }
-    };
-
-    let file = file.await.map_err(|e| {
-        log::error!("Failed to get file: {:?}", e);
-        format!("File operation failed: {}", e)
-    })?;
-
-    log::info!("File opened: {:?}", file);
-
-    // 5. 打开文件流
-    let stream = file
-        .OpenAsync(FileAccessMode::Read)
-        .map_err(|e| format!("Failed to open file: {}", e))?
-        .await
-        .map_err(|e| format!("Failed to open stream: {}", e))?;
-
-    // 6. 创建解码器
-    let decoder = BitmapDecoder::CreateAsync(&stream)
-        .map_err(|e| format!("Failed to create decoder: {}", e))?
-        .await
-        .map_err(|e| format!("Failed to get decoder: {}", e))?;
-
-    // 7. 获取位图
-    let mut bitmap = decoder
-        .GetSoftwareBitmapAsync()
-        .map_err(|e| format!("Failed to get bitmap: {}", e))?
-        .await
-        .map_err(|e| format!("Failed to load bitmap: {}", e))?;
-
-    log::info!("Bitmap format: {:?}", bitmap.BitmapPixelFormat().ok());
-
-    // 8. 正确转换位图格式（如果需要）
-    // Windows OCR 要求像素格式是 Bgra8
-    let required_format = BitmapPixelFormat::Bgra8;
-    let current_format = bitmap
-        .BitmapPixelFormat()
-        .unwrap_or(BitmapPixelFormat::Bgra8);
-
-    if current_format != required_format {
-        log::info!("Converting bitmap from {:?} to Bgra8", current_format);
-        // 正确的转换方法
-        bitmap = SoftwareBitmap::Convert(&bitmap, BitmapPixelFormat::Bgra8)
-            .map_err(|e| format!("Failed to convert bitmap format: {}", e))?;
-    }
-
-    // 9. 创建 OCR 引擎（尝试指定中文）
-    let engine = OcrEngine::TryCreateFromUserProfileLanguages()
-        .map_err(|e| format!("Failed to create OCR engine: {}", e))?;
-    log::info!("OcrEngine created successfully");
-    // 10. 执行 OCR
-    let result = engine
-        .RecognizeAsync(&bitmap)
-        .map_err(|e| format!("Failed to start recognition: {}", e))?
-        .await
-        .map_err(|e| format!("Recognition failed: {}", e))?;
-
-    // 11. 提取文本
-    let lines = result
-        .Lines()
-        .map_err(|e| format!("Failed to get lines: {}", e))?;
-    let mut full_text = String::new();
-    let line_count = lines.Size().map_err(|e| e.to_string())?;
-
-    log::info!("Found {} lines", line_count);
-
-    for i in 0..line_count {
-        if let Ok(line) = lines.GetAt(i) {
-            if let Ok(text) = line.Text() {
-                full_text.push_str(&text.to_string());
-                full_text.push('\n');
+            // Pre-clean path to handle common issues before canonicalize
+            let mut cleaned_path = original_path.clone();
+            // Remove file scheme if present (file:///C:/...)
+            if cleaned_path.starts_with("file:///") {
+                cleaned_path = cleaned_path.trim_start_matches("file:///").to_string();
+                cleaned_path = cleaned_path.replace('/', "\\");
             }
-        }
-    }
+            // Replace full-width colon (Chinese punctuation) with ASCII colon
+            if cleaned_path.contains('：') {
+                cleaned_path = cleaned_path.replace('：', ":");
+            }
+            // Remove Windows extended-length path prefix "\\?\" if present
+            if cleaned_path.starts_with("\\\\?\\") {
+                cleaned_path = cleaned_path.trim_start_matches("\\\\?\\").to_string();
+            }
 
-    let trimmed_text = full_text.trim().to_string();
-    log::info!(
-        "OCR Result ({} chars): {}",
-        trimmed_text.len(),
-        trimmed_text
-    );
+            // 1. 简化路径处理 - 使用标准库方法
+            let path = std::path::Path::new(&cleaned_path);
 
-    Ok(trimmed_text)
+            // 2. 获取绝对路径（保留 UNC 前缀）
+            let absolute_path = dunce::canonicalize(path).map_err(|e| {
+                log::error!("Failed to canonicalize path: {}", e);
+                e.to_string()
+            })?;
+
+            // 3. 直接使用规范化后的路径（不要移除 "\\?\"）
+            let path_string = absolute_path.to_string_lossy().to_string();
+            log::info!("Using path: {}", path_string);
+
+            // 4. 尝试加载文件（添加更多错误信息）
+            let file = match StorageFile::GetFileFromPathAsync(&HSTRING::from(&path_string)) {
+                Ok(op) => op,
+                Err(e) => {
+                    log::error!("GetFileFromPathAsync failed with error: {:?}", e);
+                    return Err(format!("Failed to access file: {}", e));
+                }
+            };
+
+            let file = file.await.map_err(|e| {
+                log::error!("Failed to get file: {:?}", e);
+                format!("File operation failed: {}", e)
+            })?;
+
+            log::info!("File opened: {:?}", file);
+
+            // 5. 打开文件流
+            let stream = file
+                .OpenAsync(FileAccessMode::Read)
+                .map_err(|e| format!("Failed to open file: {}", e))?
+                .await
+                .map_err(|e| format!("Failed to open stream: {}", e))?;
+
+            // 6. 创建解码器
+            let decoder = BitmapDecoder::CreateAsync(&stream)
+                .map_err(|e| format!("Failed to create decoder: {}", e))?
+                .await
+                .map_err(|e| format!("Failed to get decoder: {}", e))?;
+
+            // 7. 获取位图
+            let mut bitmap = decoder
+                .GetSoftwareBitmapAsync()
+                .map_err(|e| format!("Failed to get bitmap: {}", e))?
+                .await
+                .map_err(|e| format!("Failed to load bitmap: {}", e))?;
+
+            log::info!("Bitmap format: {:?}", bitmap.BitmapPixelFormat().ok());
+
+            // 8. 正确转换位图格式（如果需要）
+            // Windows OCR 要求像素格式是 Bgra8
+            let required_format = BitmapPixelFormat::Bgra8;
+            let current_format = bitmap
+                .BitmapPixelFormat()
+                .unwrap_or(BitmapPixelFormat::Bgra8);
+
+            if current_format != required_format {
+                log::info!("Converting bitmap from {:?} to Bgra8", current_format);
+                // 正确的转换方法
+                bitmap = SoftwareBitmap::Convert(&bitmap, BitmapPixelFormat::Bgra8)
+                    .map_err(|e| format!("Failed to convert bitmap format: {}", e))?;
+            }
+
+            // 9. 创建 OCR 引擎（尝试指定中文）
+            let engine = OcrEngine::TryCreateFromUserProfileLanguages()
+                .map_err(|e| format!("Failed to create OCR engine: {}", e))?;
+            log::info!("OcrEngine created successfully");
+            // 10. 执行 OCR
+            let result = engine
+                .RecognizeAsync(&bitmap)
+                .map_err(|e| format!("Failed to start recognition: {}", e))?
+                .await
+                .map_err(|e| format!("Recognition failed: {}", e))?;
+
+            // 11. 提取文本
+            let lines = result
+                .Lines()
+                .map_err(|e| format!("Failed to get lines: {}", e))?;
+            let mut full_text = String::new();
+            let line_count = lines.Size().map_err(|e| e.to_string())?;
+
+            log::info!("Found {} lines", line_count);
+
+            for i in 0..line_count {
+                if let Ok(line) = lines.GetAt(i) {
+                    if let Ok(text) = line.Text() {
+                        full_text.push_str(&text.to_string());
+                        full_text.push('\n');
+                    }
+                }
+            }
+
+            let trimmed_text = full_text.trim().to_string();
+            log::info!(
+                "OCR Result ({} chars): {}",
+                trimmed_text.len(),
+                trimmed_text
+            );
+
+            Ok(trimmed_text)
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
