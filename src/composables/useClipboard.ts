@@ -132,7 +132,6 @@ export function useClipboard() {
         history.value = [];
         hasMore.value = true;
       }
-
       const newItems = await invoke<ClipboardItem[]>("get_history", {
         page: currentPage.value,
         pageSize: PAGE_SIZE,

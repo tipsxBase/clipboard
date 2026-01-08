@@ -1,7 +1,7 @@
 <template>
   <Dialog :open="open" @update:open="$emit('update:open', $event)">
     <DialogContent
-      class="sm:max-w-2xl bg-background text-foreground h-[80vh] flex flex-col"
+      class="bg-background text-foreground h-[80vh] flex flex-col max-w-full! w-4/5!"
     >
       <DialogHeader>
         <DialogTitle>{{
