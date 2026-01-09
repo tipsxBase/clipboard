@@ -9,6 +9,8 @@ import { useForm } from "vee-validate";
 import {
   Search,
   Settings,
+  CaseSensitive,
+  Regex,
   Trash2,
   Pause,
   Play,
@@ -34,7 +36,15 @@ import {
   ScanText,
   Edit2,
   NotepadText,
+  Files,
+  FileAudio,
+  FileVideo,
+  FileArchive,
+  FileSpreadsheet,
+  FileImage,
+  FileCode,
 } from "lucide-vue-next";
+import DOMPurify from "dompurify";
 import Button from "@/components/ui/button/Button.vue";
 import Input from "@/components/ui/input/Input.vue";
 import { Switch } from "@/components/ui/switch";
@@ -65,6 +75,7 @@ import SelectValue from "@/components/ui/select/SelectValue.vue";
 import SelectContent from "@/components/ui/select/SelectContent.vue";
 import SelectItem from "@/components/ui/select/SelectItem.vue";
 import ItemEditorDialog from "@/components/ItemEditorDialog.vue";
+import HighlightText from "@/components/HighlightText.vue";
 
 const { t } = useI18n();
 const { toastMessage } = useToast();
@@ -74,6 +85,8 @@ const {
   collections,
   totalCount,
   searchQuery,
+  searchRegex,
+  searchCaseSensitive,
   selectedIndex,
   activeFilter,
   activeCollectionId,
@@ -99,6 +112,65 @@ const {
   updateItemContent,
   addItem,
 } = useClipboard();
+function getFilesList(content: string): string[] {
+  try {
+    return JSON.parse(content);
+  } catch {
+    return [];
+  }
+}
+
+// function isImageFile(path: string): boolean {
+//   const ext = path.split(".").pop()?.toLowerCase();
+//   return ["png", "jpg", "jpeg", "gif", "bmp", "webp", "svg"].includes(
+//     ext || ""
+//   );
+// }
+
+function getFileIcon(path: string) {
+  const ext = path.split(".").pop()?.toLowerCase();
+  if (!ext) return Files;
+
+  if (
+    ["png", "jpg", "jpeg", "gif", "bmp", "webp", "svg", "ico"].includes(ext)
+  ) {
+    return FileImage;
+  }
+  if (["mp3", "wav", "ogg", "m4a", "flac", "aac"].includes(ext)) {
+    return FileAudio;
+  }
+  if (["mp4", "mkv", "avi", "mov", "webm", "wmv"].includes(ext)) {
+    return FileVideo;
+  }
+  if (["zip", "rar", "7z", "tar", "gz", "bz2", "xz"].includes(ext)) {
+    return FileArchive;
+  }
+  if (["xls", "xlsx", "csv", "numbers"].includes(ext)) {
+    return FileSpreadsheet;
+  }
+  if (
+    [
+      "js",
+      "ts",
+      "jsx",
+      "tsx",
+      "json",
+      "html",
+      "css",
+      "py",
+      "rs",
+      "java",
+      "c",
+      "cpp",
+    ].includes(ext)
+  ) {
+    return FileCode;
+  }
+  if (["doc", "docx", "pdf", "txt", "rtf", "md"].includes(ext)) {
+    return FileText;
+  }
+  return Files;
+}
 
 const getCollectionName = (id?: number) => {
   if (!id) return undefined;
@@ -142,6 +214,11 @@ const {
 
 const showItemEditor = ref(false);
 const editingItem = ref<ClipboardItem | null>(null);
+const showHtml = ref(false);
+
+watch(previewItem, () => {
+  showHtml.value = false;
+});
 
 function openEditor(item: ClipboardItem | null) {
   editingItem.value = item;
@@ -257,22 +334,23 @@ function addSensitiveApp(appName?: string) {
   }
 }
 
-function handleDragStart(e: DragEvent, item: ClipboardItem) {
-  if (e.dataTransfer) {
-    e.dataTransfer.effectAllowed = "copy";
+// function handleDragStart(e: DragEvent, item: ClipboardItem) {
+//   if (e.dataTransfer) {
+//     e.dataTransfer.effectAllowed = "copy";
 
-    // Set text/plain for all items as fallback
-    e.dataTransfer.setData("text/plain", item.content);
+//     // Set text/plain for all items as fallback
+//     e.dataTransfer.setData("text/plain", item.content);
 
-    if (item.kind === "image") {
-      // For images, we try to set file URL if it's a local path
-      if (item.content.startsWith("/") || item.content.match(/^[a-zA-Z]:\//)) {
-        const fileUrl = `file://${item.content}`;
-        e.dataTransfer.setData("text/uri-list", fileUrl);
-      }
-    }
-  }
-}
+//     if (item.kind === "image") {
+//       // For images, we try to set file URL if it's a local path
+//       if (item.content.startsWith("/") || item.content.match(/^[a-zA-Z]:\//)) {
+//         const fileUrl = `file://${item.content}`;
+//         if (item.kind === "file") return Files;
+//         e.dataTransfer.setData("text/uri-list", fileUrl);
+//       }
+//     }
+//   }
+// }
 
 function getItemIcon(item: ClipboardItem) {
   if (item.kind === "image") return ImageIcon;
@@ -297,6 +375,8 @@ function getFilterIcon(filter: string) {
       return FileText;
     case "image":
       return ImageIcon;
+    case "file":
+      return Files;
     case "sensitive":
       return Lock;
     case "url":
@@ -401,18 +481,47 @@ onUnmounted(() => {
       class="border-b border-border bg-card/40 backdrop-blur-md p-3 space-y-3"
     >
       <!-- Search Bar -->
-      <div class="relative">
-        <Search
-          class="absolute left-2.5 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground"
-        />
-        <Input
-          v-model="searchQuery"
-          class="w-full pl-9 pr-20 h-8 text-xs"
-          :placeholder="t('searchPlaceholder')"
-        />
-        <div
-          class="absolute right-3 top-1/2 transform -translate-y-1/2 text-xs text-muted-foreground"
-        >
+      <div class="relative flex items-center gap-2">
+        <div class="relative flex-1">
+          <Search
+            class="absolute left-2.5 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground"
+          />
+          <Input
+            v-model="searchQuery"
+            class="w-full pl-9 h-8 text-xs relative"
+            :placeholder="t('searchPlaceholder')"
+          >
+            <template #icon>
+              <div
+                class="absolute right-1 top-1/2 transform -translate-y-1/2 flex items-center gap-0.5"
+              >
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  class="h-6 w-6 rounded-sm"
+                  :class="{
+                    'bg-accent text-accent-foreground': searchCaseSensitive,
+                  }"
+                  @click="searchCaseSensitive = !searchCaseSensitive"
+                  :title="t('search.matchCase') || 'Match Case'"
+                >
+                  <CaseSensitive class="w-3.5 h-3.5" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  class="h-6 w-6 rounded-sm"
+                  :class="{ 'bg-accent text-accent-foreground': searchRegex }"
+                  @click="searchRegex = !searchRegex"
+                  :title="t('search.regex') || 'Use Regular Expression'"
+                >
+                  <Regex class="w-3.5 h-3.5" />
+                </Button>
+              </div>
+            </template>
+          </Input>
+        </div>
+        <div class="text-xs text-muted-foreground whitespace-nowrap shrink-0">
           {{ totalCount }} {{ t("stats.items") }}
         </div>
       </div>
@@ -425,6 +534,7 @@ onUnmounted(() => {
               'all',
               'text',
               'image',
+              'file',
               'sensitive',
               'url',
               'email',
@@ -578,7 +688,6 @@ onUnmounted(() => {
             config.compact_mode ? 'p-1.5' : 'p-3',
           ]"
           draggable="true"
-          @dragstart="handleDragStart($event, item)"
           @click="pasteItem(item, false)"
           @mouseenter="selectedIndex = index"
         >
@@ -631,6 +740,14 @@ onUnmounted(() => {
                     <NotepadText class="w-3 h-3" />
                     <span class="max-w-[100px] truncate">{{ item.note }}</span>
                   </div>
+                  <div
+                    v-if="item.html_content"
+                    class="flex items-center gap-1 bg-sky-500/10 text-sky-500 px-1.5 py-0.5 rounded text-[10px]"
+                    title="HTML"
+                  >
+                    <Code class="w-3 h-3" />
+                    <span class="max-w-[40px] truncate">HTML</span>
+                  </div>
 
                   <span
                     v-if="item.source_app"
@@ -655,7 +772,19 @@ onUnmounted(() => {
                       'text-muted-foreground opacity-80': !!item.note,
                     }"
                   >
-                    {{ item.content }}
+                    <HighlightText
+                      :text="item.content"
+                      :query="searchQuery"
+                      :is-regex="searchRegex"
+                      :is-case-sensitive="searchCaseSensitive"
+                    />
+                  </p>
+                  <p
+                    v-else-if="item.kind === 'file'"
+                    class="text-xs text-foreground line-clamp-1 break-all font-medium flex-1"
+                  >
+                    {{ getFilesList(item.content).length }} Files:
+                    {{ getFilesList(item.content)[0] }}
                   </p>
                   <div v-else class="flex items-center gap-2 flex-1">
                     <span class="text-xs text-muted-foreground italic"
@@ -693,8 +822,35 @@ onUnmounted(() => {
                     'text-muted-foreground text-xs': !!item.note,
                   }"
                 >
-                  {{ item.content }}
+                  <HighlightText
+                    :text="item.content"
+                    :query="searchQuery"
+                    :is-regex="searchRegex"
+                    :is-case-sensitive="searchCaseSensitive"
+                  />
                 </p>
+                <div
+                  v-else-if="item.kind === 'file'"
+                  class="flex flex-col gap-1 mt-1"
+                >
+                  <div
+                    v-for="(file, i) in getFilesList(item.content).slice(0, 3)"
+                    :key="i"
+                    class="text-xs text-foreground bg-muted/50 px-2 py-1 rounded truncate flex items-center gap-2"
+                  >
+                    <component
+                      :is="getFileIcon(file)"
+                      class="shrink-0 w-4 h-4 text-muted-foreground"
+                    />
+                    <span class="truncate">{{ file }}</span>
+                  </div>
+                  <div
+                    v-if="getFilesList(item.content).length > 3"
+                    class="text-[10px] text-muted-foreground pl-1"
+                  >
+                    + {{ getFilesList(item.content).length - 3 }} more
+                  </div>
+                </div>
                 <div
                   v-else
                   class="h-16 w-full rounded-md overflow-hidden bg-muted/50 border border-border mt-1"
@@ -866,6 +1022,7 @@ onUnmounted(() => {
         >
           <div class="flex items-center gap-2 text-muted-foreground">
             <FileText v-if="previewItem.kind === 'text'" class="w-4 h-4" />
+            <Files v-else-if="previewItem.kind === 'file'" class="w-4 h-4" />
             <ImageIcon v-else class="w-4 h-4" />
             <span class="text-sm font-medium">{{
               formatTimeAgo(previewItem.timestamp)
@@ -881,11 +1038,54 @@ onUnmounted(() => {
           </Button>
         </div>
         <div class="p-6 overflow-auto bg-muted/10">
-          <pre
-            v-if="previewItem.kind === 'text'"
-            class="font-mono text-sm text-foreground whitespace-pre-wrap break-all"
-            >{{ previewContent || previewItem.content }}</pre
+          <div v-if="previewItem.kind === 'text'" class="flex flex-col gap-2">
+            <div v-if="previewItem.html_content" class="flex justify-end">
+              <Button
+                size="sm"
+                variant="outline"
+                class="h-6 text-xs gap-1"
+                @click="showHtml = !showHtml"
+              >
+                <component :is="showHtml ? FileText : Code" class="w-3 h-3" />
+                {{ showHtml ? "Text" : "HTML" }}
+              </Button>
+            </div>
+            <div
+              v-if="showHtml && previewItem.html_content"
+              class="p-4 bg-white text-black rounded-md border border-border overflow-auto"
+              v-html="
+                DOMPurify.sanitize(previewItem.html_content, {
+                  ADD_ATTR: ['style'],
+                })
+              "
+            ></div>
+            <pre
+              v-else
+              class="font-mono text-sm text-foreground whitespace-pre-wrap break-all"
+              >{{ previewContent || previewItem.content }}</pre
+            >
+          </div>
+          <div
+            v-else-if="previewItem.kind === 'file'"
+            class="flex flex-col gap-2"
           >
+            <h3 class="font-medium text-sm text-muted-foreground">
+              {{ getFilesList(previewItem.content).length }} Files
+            </h3>
+            <div class="space-y-1">
+              <div
+                v-for="(file, i) in getFilesList(previewItem.content)"
+                :key="i"
+                class="flex items-center gap-2 p-2 bg-muted/50 rounded text-sm break-all font-mono"
+              >
+                <component
+                  :is="getFileIcon(file)"
+                  class="shrink-0 w-5 h-5 text-muted-foreground"
+                />
+                {{ file }}
+              </div>
+            </div>
+          </div>
           <div v-else class="flex justify-center">
             <LocalImage
               :src="previewItem.content"

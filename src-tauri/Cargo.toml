@@ -36,7 +36,7 @@ log = "0.4.29"
 clipboard-master = "4.0.0"
 active-win-pos-rs = "0.9.1"
 home = "0.5.9"
-rusqlite = { version = "0.37.0", features = ["bundled"] }
+rusqlite = { version = "0.37.0", features = ["bundled", "functions"] }
 aes-gcm = "0.10.3"
 rand = "0.9.2"
 tauri-plugin-fs = "2.4.4"
@@ -44,6 +44,7 @@ window-vibrancy = "0.7.1"
 regex = "1.12.2"
 dunce = "1.0"
 tokio = { version = "1.49.0", features = ["rt", "macros", "sync", "time"] }
+clipboard-rs = "0.3.1"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-global-shortcut = "2"

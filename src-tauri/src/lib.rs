@@ -59,6 +59,8 @@ pub fn run() {
     let last_app_change_state = last_app_change.clone();
     let last_app_image_change = Arc::new(Mutex::new(None));
     let last_app_image_change_state = last_app_image_change.clone();
+    let last_app_file_change = Arc::new(Mutex::new(None));
+    let last_app_file_change_state = last_app_file_change.clone();
     let paste_stack = Arc::new(Mutex::new(Vec::<ClipboardItem>::new()));
     let paste_stack_state = paste_stack.clone();
 
@@ -187,6 +189,7 @@ pub fn run() {
                 is_paused: is_paused_state.clone(),
                 last_app_change: last_app_change_state.clone(),
                 last_app_image_change: last_app_image_change_state.clone(),
+                last_app_file_change: last_app_file_change_state.clone(),
                 paste_stack: paste_stack_state.clone(),
                 pause_item: Arc::new(Mutex::new(None)),
             });

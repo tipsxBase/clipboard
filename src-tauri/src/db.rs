@@ -1,7 +1,8 @@
 use crate::crypto::Crypto;
 use crate::models::{ClipboardItem, Collection};
 use chrono::Local;
-use rusqlite::{params, Connection, OptionalExtension, Result};
+use regex::Regex;
+use rusqlite::{functions::FunctionFlags, params, Connection, OptionalExtension, Result};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
@@ -79,7 +80,33 @@ impl Database {
             tx.execute("PRAGMA user_version = 5", [])?;
         }
 
+        if version < 6 {
+            let _ = tx.execute("ALTER TABLE history ADD COLUMN html_content TEXT", []);
+            tx.execute("PRAGMA user_version = 6", [])?;
+        }
+
         tx.commit()?;
+
+        // Add REGEXP function
+        conn.create_scalar_function(
+            "REGEXP",
+            2,
+            FunctionFlags::SQLITE_DETERMINISTIC,
+            move |ctx| {
+                let regex_s = ctx.get::<String>(0)?;
+                // Handle nullable text column (like 'note')
+                let text = ctx.get::<Option<String>>(1)?.unwrap_or_default();
+
+                // log::info!("REGEXP called: pattern='{}', text='{}'", regex_s, text);
+
+                let regex = Regex::new(&regex_s).map_err(|e| {
+                    log::error!("Invalid regex '{}': {}", regex_s, e);
+                    rusqlite::Error::UserFunctionError(Box::new(e))
+                })?;
+
+                Ok(regex.is_match(&text))
+            },
+        )?;
 
         Ok(Self {
             conn: Mutex::new(conn),
@@ -92,20 +119,53 @@ impl Database {
         page: usize,
         page_size: usize,
         query: Option<String>,
+        search_regex: bool,
+        search_case_sensitive: bool,
         collection_id: Option<i64>,
     ) -> Result<Vec<ClipboardItem>> {
         let conn = self.conn.lock().unwrap();
         let offset = (page - 1) * page_size;
 
-        let mut sql = String::from("SELECT id, content, kind, timestamp, is_sensitive, is_pinned, source_app, data_type, collection_id, note FROM history WHERE 1=1");
+        let mut sql = String::from("SELECT id, content, kind, timestamp, is_sensitive, is_pinned, source_app, data_type, collection_id, note, html_content FROM history WHERE 1=1");
         let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
 
-        if let Some(q) = &query {
+        if let Some(q) = query {
             if !q.is_empty() {
-                sql.push_str(" AND (content LIKE ? OR note LIKE ?)");
-                let pattern = format!("%{}%", q);
-                params.push(Box::new(pattern.clone()));
-                params.push(Box::new(pattern));
+                if search_regex {
+                    sql.push_str(" AND (content REGEXP ? OR note REGEXP ?)");
+                    // If case insensitive, we prepend (?i) flag to the regex string.
+                    // This flag works in Rust regex crate which we used in create_scalar_function.
+                    let final_query = if search_case_sensitive {
+                        q.clone()
+                    } else {
+                        format!("(?i){}", q)
+                    };
+                    params.push(Box::new(final_query.clone()));
+                    params.push(Box::new(final_query));
+                } else {
+                    if search_case_sensitive {
+                        // SQLite LIKE is case-insensitive by default for ASCII characters.
+                        // To make it case-sensitive, we can use GLOB which is case-sensitive (and uses * instead of %),
+                        // OR we can use the `PRAGMA case_sensitive_like = ON` command (but that is connection wide),
+                        // OR we can simply use the binary comparison for exact match or INSTR for substrings,
+                        // BUT for pattern matching usually `GLOB` is the way.
+                        // However, GLOB uses * and ?, not %. So we need to reformat the pattern or just use INSTR > 0 for simpler specific contains check.
+                        // Since `q` here is a substring (like %q%), INSTR(content, q) > 0 does the job and is case-sensitive by default (if not explicitly COLLATE NOCASE).
+                        // Wait, sqlite INSTR IS case-sensitive by default? No, it depends on collation?
+                        // Actually, GLOB is the standard way for case-sensitive pattern matching in SQLite.
+                        // wildcard: * matches any sequence, ? matches any single char.
+
+                        sql.push_str(" AND (content GLOB ? OR note GLOB ?)");
+                        let pattern = format!("*{}*", q); // Using * for GLOB
+                        params.push(Box::new(pattern.clone()));
+                        params.push(Box::new(pattern));
+                    } else {
+                        sql.push_str(" AND (content LIKE ? OR note LIKE ?)");
+                        let pattern = format!("%{}%", q);
+                        params.push(Box::new(pattern.clone()));
+                        params.push(Box::new(pattern));
+                    }
+                }
             }
         }
 
@@ -134,11 +194,22 @@ impl Database {
             let data_type: String = row.get(7)?;
             let collection_id: Option<i64> = row.get(8)?;
             let note: Option<String> = row.get(9)?;
+            let html_content: Option<String> = row.get(10)?;
 
             let final_content = if is_sensitive && kind == "text" {
                 self.crypto.decrypt(&content).unwrap_or(content)
             } else {
                 content
+            };
+
+            let final_html = if let Some(html) = html_content {
+                if is_sensitive {
+                    Some(self.crypto.decrypt(&html).unwrap_or(html))
+                } else {
+                    Some(html)
+                }
+            } else {
+                None
             };
 
             Ok(ClipboardItem {
@@ -152,6 +223,7 @@ impl Database {
                 data_type,
                 collection_id,
                 note,
+                html_content: final_html,
             })
         })?;
 
@@ -174,16 +246,26 @@ impl Database {
             item.content.clone()
         };
 
-        // Deduplicate: Update timestamp and source_app if exists
+        let html_to_store = if let Some(html) = &item.html_content {
+            if item.is_sensitive {
+                Some(self.crypto.encrypt(html).unwrap_or(html.clone()))
+            } else {
+                Some(html.clone())
+            }
+        } else {
+            None
+        };
+
+        // Deduplicate: Update timestamp, source_app and html_content if exists
         let updated_count = conn.execute(
-            "UPDATE history SET timestamp = ?1, source_app = ?2 WHERE content = ?3 AND kind = ?4",
-            params![item.timestamp, item.source_app, content_to_store, item.kind],
+            "UPDATE history SET timestamp = ?1, source_app = ?2, html_content = ?3 WHERE content = ?4 AND kind = ?5",
+            params![item.timestamp, item.source_app, html_to_store, content_to_store, item.kind],
         )?;
 
         if updated_count == 0 {
             // Insert new item
             conn.execute(
-                "INSERT INTO history (content, kind, timestamp, is_sensitive, is_pinned, source_app, data_type, collection_id, note) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                "INSERT INTO history (content, kind, timestamp, is_sensitive, is_pinned, source_app, data_type, collection_id, note, html_content) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
                 params![
                     content_to_store,
                     item.kind,
@@ -193,7 +275,8 @@ impl Database {
                     item.source_app,
                     item.data_type,
                     item.collection_id,
-                    item.note
+                    item.note,
+                    html_to_store
                 ],
             )?;
         }
@@ -205,7 +288,7 @@ impl Database {
 
             // Fetch items to be deleted first (oldest timestamp, NOT pinned)
             let mut stmt = conn.prepare(&format!(
-                "SELECT content, kind, timestamp, is_sensitive, is_pinned, source_app, data_type, collection_id, note FROM history WHERE is_pinned = 0 ORDER BY timestamp ASC LIMIT {}",
+                "SELECT content, kind, timestamp, is_sensitive, is_pinned, source_app, data_type, collection_id, note, html_content FROM history WHERE is_pinned = 0 ORDER BY timestamp ASC LIMIT {}",
                 delete_count
             ))?;
 
@@ -219,11 +302,22 @@ impl Database {
                 let data_type: String = row.get(6)?;
                 let collection_id: Option<i64> = row.get(7)?;
                 let note: Option<String> = row.get(8)?;
+                let html_content: Option<String> = row.get(9)?;
 
                 let final_content = if is_sensitive && kind == "text" {
                     self.crypto.decrypt(&content).unwrap_or(content)
                 } else {
                     content
+                };
+
+                let final_html = if let Some(html) = html_content {
+                    if is_sensitive {
+                        Some(self.crypto.decrypt(&html).unwrap_or(html))
+                    } else {
+                        Some(html)
+                    }
+                } else {
+                    None
                 };
 
                 Ok(ClipboardItem {
@@ -237,6 +331,7 @@ impl Database {
                     data_type,
                     collection_id,
                     note,
+                    html_content: final_html,
                 })
             })?;
 
@@ -268,7 +363,7 @@ impl Database {
         // Get the ID and details of the item at the specified offset
         let item: Option<(i64, ClipboardItem)> = conn
             .query_row(
-                "SELECT id, content, kind, timestamp, is_sensitive, is_pinned, source_app, data_type, collection_id, note FROM history ORDER BY is_pinned DESC, timestamp DESC LIMIT 1 OFFSET ?1",
+                "SELECT id, content, kind, timestamp, is_sensitive, is_pinned, source_app, data_type, collection_id, note, html_content FROM history ORDER BY is_pinned DESC, timestamp DESC LIMIT 1 OFFSET ?1",
                 params![index],
                 |row| {
                     let id: i64 = row.get(0)?;
@@ -281,11 +376,22 @@ impl Database {
                     let data_type: String = row.get(7)?;
                     let collection_id: Option<i64> = row.get(8)?;
                     let note: Option<String> = row.get(9)?;
+                    let html_content: Option<String> = row.get(10)?;
 
                     let final_content = if is_sensitive && kind == "text" {
                         self.crypto.decrypt(&content).unwrap_or(content)
                     } else {
                         content
+                    };
+
+                     let final_html = if let Some(html) = html_content {
+                         if is_sensitive {
+                             Some(self.crypto.decrypt(&html).unwrap_or(html))
+                        } else {
+                             Some(html)
+                        }
+                    } else {
+                        None
                     };
 
                     Ok((
@@ -301,6 +407,7 @@ impl Database {
                             data_type,
                             collection_id,
                             note,
+                            html_content: final_html,
                         },
                     ))
                 },
@@ -405,7 +512,7 @@ impl Database {
         };
 
         conn.execute(
-            "UPDATE history SET content = ?1, data_type = ?2, timestamp = ?3, note = ?4 WHERE id = ?5",
+            "UPDATE history SET content = ?1, data_type = ?2, timestamp = ?3, note = ?4, html_content = NULL WHERE id = ?5",
             params![
                 final_content,
                 new_data_type,
@@ -442,7 +549,7 @@ impl Database {
 
         // 查询所有将要被删除的项
         let select_sql = format!(
-            "SELECT id, content, kind, timestamp, is_sensitive, is_pinned, source_app, data_type, collection_id, note FROM history {}",
+            "SELECT id, content, kind, timestamp, is_sensitive, is_pinned, source_app, data_type, collection_id, note, html_content FROM history {}",
             where_clause
         );
         let mut stmt = conn.prepare(&select_sql)?;
@@ -457,11 +564,22 @@ impl Database {
             let data_type: String = row.get(7)?;
             let collection_id: Option<i64> = row.get(8)?;
             let note: Option<String> = row.get(9)?;
+            let html_content: Option<String> = row.get(10)?;
 
             let final_content = if is_sensitive && kind == "text" {
                 self.crypto.decrypt(&content).unwrap_or(content)
             } else {
                 content
+            };
+
+            let final_html = if let Some(html) = html_content {
+                if is_sensitive {
+                    Some(self.crypto.decrypt(&html).unwrap_or(html))
+                } else {
+                    Some(html)
+                }
+            } else {
+                None
             };
 
             Ok(ClipboardItem {
@@ -475,6 +593,7 @@ impl Database {
                 data_type,
                 collection_id,
                 note,
+                html_content: final_html,
             })
         })?;
 

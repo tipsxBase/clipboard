@@ -15,9 +15,19 @@ export function useClipboard() {
   const collections = ref<Collection[]>([]);
   const totalCount = ref(0);
   const searchQuery = ref("");
+  const searchRegex = ref(false);
+  const searchCaseSensitive = ref(false);
   const selectedIndex = ref(0);
   const activeFilter = ref<
-    "all" | "text" | "image" | "sensitive" | "url" | "email" | "code" | "phone"
+    | "all"
+    | "text"
+    | "image"
+    | "sensitive"
+    | "url"
+    | "email"
+    | "code"
+    | "phone"
+    | "file"
   >("all");
   const activeCollectionId = ref<number | null>(null);
   const previewItem = ref<ClipboardItem | null>(null);
@@ -94,10 +104,19 @@ export function useClipboard() {
   const PAGE_SIZE = 50;
 
   // Watchers for filters to reload history
-  watch([searchQuery, activeCollectionId, activeFilter], () => {
-    currentPage.value = 1;
-    loadHistory(true);
-  });
+  watch(
+    [
+      searchQuery,
+      activeCollectionId,
+      activeFilter,
+      searchRegex,
+      searchCaseSensitive,
+    ],
+    () => {
+      currentPage.value = 1;
+      loadHistory(true);
+    }
+  );
 
   const filteredHistory = computed(() => {
     // Client-side filtering is now minimal or removed in favor of server-side
@@ -113,6 +132,8 @@ export function useClipboard() {
       items = items.filter((i) => i.kind === "text");
     } else if (activeFilter.value === "image") {
       items = items.filter((i) => i.kind === "image");
+    } else if (activeFilter.value === "file") {
+      items = items.filter((i) => i.kind === "file");
     } else if (activeFilter.value === "sensitive") {
       items = items.filter((i) => i.is_sensitive);
     } else if (["url", "email", "code", "phone"].includes(activeFilter.value)) {
@@ -136,6 +157,8 @@ export function useClipboard() {
         page: currentPage.value,
         pageSize: PAGE_SIZE,
         query: searchQuery.value || null,
+        searchRegex: searchRegex.value,
+        searchCaseSensitive: searchCaseSensitive.value,
         collectionId: activeCollectionId.value,
       });
 
@@ -192,6 +215,7 @@ export function useClipboard() {
         content,
         kind: item.kind,
         id: item.id,
+        htmlContent: item.html_content,
       });
       await loadHistory(true);
       searchQuery.value = "";
@@ -418,6 +442,8 @@ export function useClipboard() {
     collections,
     totalCount,
     searchQuery,
+    searchRegex,
+    searchCaseSensitive,
     selectedIndex,
     activeFilter,
     activeCollectionId,

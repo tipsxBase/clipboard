@@ -15,11 +15,26 @@ pub fn get_history(
     page: usize,
     page_size: usize,
     query: Option<String>,
+    search_regex: Option<bool>,
+    search_case_sensitive: Option<bool>,
     collection_id: Option<i64>,
 ) -> Vec<ClipboardItem> {
+    log::info!(
+        "get_history query: {:?}, regex: {:?}, case: {:?}",
+        query,
+        search_regex,
+        search_case_sensitive
+    );
     state
         .db
-        .get_history(page, page_size, query, collection_id)
+        .get_history(
+            page,
+            page_size,
+            query,
+            search_regex.unwrap_or(false),
+            search_case_sensitive.unwrap_or(false),
+            collection_id,
+        )
         .unwrap_or_default()
 }
 
@@ -29,6 +44,7 @@ pub fn set_clipboard_item(
     content: String,
     kind: String,
     id: Option<i64>,
+    html_content: Option<String>,
     state: tauri::State<AppState>,
 ) -> Result<(), String> {
     // Mark this content as set by the app to avoid duplication in monitor
@@ -50,6 +66,7 @@ pub fn set_clipboard_item(
         data_type,
         collection_id: None,
         note: None,
+        html_content: html_content.clone(),
     };
 
     // Write to clipboard
@@ -90,7 +107,10 @@ pub fn set_clipboard_item(
     }
 
     // Update Tray
-    let history = state.db.get_history(1, 20, None, None).unwrap_or_default();
+    let history = state
+        .db
+        .get_history(1, 20, None, false, false, None)
+        .unwrap_or_default();
     if let Err(e) = update_tray_menu(&app, &history) {
         log::error!("Failed to update tray menu: {}", e);
     }
@@ -128,7 +148,10 @@ pub fn delete_item(
     }
 
     // Update Tray
-    let history = state.db.get_history(1, 20, None, None).unwrap_or_default();
+    let history = state
+        .db
+        .get_history(1, 20, None, false, false, None)
+        .unwrap_or_default();
     if let Err(e) = update_tray_menu(&app, &history) {
         log::error!("Failed to update tray menu after delete: {}", e);
     }

@@ -1,6 +1,7 @@
 use crate::models::ClipboardItem;
 use crate::state::AppState;
 use base64::{engine::general_purpose, Engine as _};
+use clipboard_rs::{Clipboard, ClipboardContent, ClipboardContext};
 use regex::Regex;
 use std::fs;
 use tauri::Manager;
@@ -50,6 +51,22 @@ pub fn classify_content(content: &str) -> String {
 
 pub fn write_to_clipboard(app: &tauri::AppHandle, item: &ClipboardItem) -> Result<(), String> {
     if item.kind == "text" {
+        // Try to use clipboard-rs for dual storage (Text + HTML)
+        if let Some(html) = &item.html_content {
+            if let Ok(ctx) = ClipboardContext::new() {
+                let contents = vec![
+                    ClipboardContent::Text(item.content.clone()),
+                    ClipboardContent::Html(html.clone()),
+                ];
+                if let Err(e) = ctx.set(contents) {
+                    log::error!("Failed to set rich text via clipboard-rs: {}", e);
+                    // Fallback to standard text via tauri plugin if rich text fails
+                } else {
+                    return Ok(());
+                }
+            }
+        }
+
         app.clipboard()
             .write_text(item.content.clone())
             .map_err(|e| e.to_string())?;
@@ -80,6 +97,21 @@ pub fn write_to_clipboard(app: &tauri::AppHandle, item: &ClipboardItem) -> Resul
         app.clipboard()
             .write_image(&tauri_img)
             .map_err(|e| e.to_string())?;
+    } else if item.kind == "file" {
+        let files: Vec<String> = serde_json::from_str(&item.content).map_err(|e| e.to_string())?;
+
+        // Update last_app_file_change
+        let state = app.state::<AppState>();
+        if let Ok(mut last_change) = state.last_app_file_change.lock() {
+            *last_change = Some(files.clone());
+        }
+
+        if let Ok(ctx) = ClipboardContext::new() {
+            let contents = vec![ClipboardContent::Files(files)];
+            ctx.set(contents).map_err(|e| e.to_string())?;
+        } else {
+            return Err("Failed to access clipboard context".to_string());
+        }
     }
     Ok(())
 }
