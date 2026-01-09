@@ -22,6 +22,13 @@ import {
   ScanText,
   Folder,
   NotepadText,
+  Files,
+  FileAudio,
+  FileVideo,
+  FileArchive,
+  FileSpreadsheet,
+  FileImage,
+  FileCode,
 } from "lucide-vue-next";
 import Button from "@/components/ui/button/Button.vue";
 import Input from "@/components/ui/input/Input.vue";
@@ -65,8 +72,62 @@ const getCollectionName = (id?: number) => {
   return collections.value.find((c) => c.id === id)?.name;
 };
 
+function getFilesList(content: string): string[] {
+  try {
+    return JSON.parse(content);
+  } catch {
+    return [];
+  }
+}
+
+function getFileIcon(path: string) {
+  const ext = path.split(".").pop()?.toLowerCase();
+  if (!ext) return Files;
+
+  if (
+    ["png", "jpg", "jpeg", "gif", "bmp", "webp", "svg", "ico"].includes(ext)
+  ) {
+    return FileImage;
+  }
+  if (["mp3", "wav", "ogg", "m4a", "flac", "aac"].includes(ext)) {
+    return FileAudio;
+  }
+  if (["mp4", "mkv", "avi", "mov", "webm", "wmv"].includes(ext)) {
+    return FileVideo;
+  }
+  if (["zip", "rar", "7z", "tar", "gz", "bz2", "xz"].includes(ext)) {
+    return FileArchive;
+  }
+  if (["xls", "xlsx", "csv", "numbers"].includes(ext)) {
+    return FileSpreadsheet;
+  }
+  if (
+    [
+      "js",
+      "ts",
+      "jsx",
+      "tsx",
+      "json",
+      "html",
+      "css",
+      "py",
+      "rs",
+      "java",
+      "c",
+      "cpp",
+    ].includes(ext)
+  ) {
+    return FileCode;
+  }
+  if (["doc", "docx", "pdf", "txt", "rtf", "md"].includes(ext)) {
+    return FileText;
+  }
+  return Files;
+}
+
 function getItemIcon(item: any) {
   if (item.kind === "image") return ImageIcon;
+  if (item.kind === "file") return Files;
 
   switch (item.data_type) {
     case "url":
@@ -332,6 +393,13 @@ onUnmounted(() => {
                   >
                     {{ item.content }}
                   </p>
+                  <p
+                    v-else-if="item.kind === 'file'"
+                    class="text-xs text-foreground line-clamp-1 break-all font-medium flex-1"
+                  >
+                    {{ getFilesList(item.content).length }} Files:
+                    {{ getFilesList(item.content)[0] }}
+                  </p>
                   <div v-else class="flex items-center gap-2 flex-1">
                     <span class="text-xs text-muted-foreground italic"
                       >[Image]</span
@@ -371,6 +439,28 @@ onUnmounted(() => {
                 >
                   {{ item.content }}
                 </p>
+                <div
+                  v-else-if="item.kind === 'file'"
+                  class="flex flex-col gap-1 mt-1"
+                >
+                  <div
+                    v-for="(file, i) in getFilesList(item.content).slice(0, 3)"
+                    :key="i"
+                    class="text-xs text-foreground bg-muted/50 px-2 py-1 rounded truncate flex items-center gap-2"
+                  >
+                    <component
+                      :is="getFileIcon(file)"
+                      class="shrink-0 w-4 h-4 text-muted-foreground"
+                    />
+                    <span class="truncate">{{ file }}</span>
+                  </div>
+                  <div
+                    v-if="getFilesList(item.content).length > 3"
+                    class="text-[10px] text-muted-foreground pl-1"
+                  >
+                    + {{ getFilesList(item.content).length - 3 }} more
+                  </div>
+                </div>
                 <div
                   v-else
                   class="h-16 w-full rounded-md overflow-hidden bg-muted/50 border border-border mt-1"
@@ -522,6 +612,7 @@ onUnmounted(() => {
         >
           <div class="flex items-center gap-2 text-muted-foreground">
             <FileText v-if="previewItem.kind === 'text'" class="w-4 h-4" />
+            <Files v-else-if="previewItem.kind === 'file'" class="w-4 h-4" />
             <ImageIcon v-else class="w-4 h-4" />
             <span class="text-sm font-medium">{{
               formatTimeAgo(previewItem.timestamp)
@@ -542,6 +633,27 @@ onUnmounted(() => {
             class="font-mono text-sm text-foreground whitespace-pre-wrap break-all"
             >{{ previewContent || previewItem.content }}</pre
           >
+          <div
+            v-else-if="previewItem.kind === 'file'"
+            class="flex flex-col gap-2"
+          >
+            <h3 class="font-medium text-sm text-muted-foreground">
+              {{ getFilesList(previewItem.content).length }} Files
+            </h3>
+            <div class="space-y-1">
+              <div
+                v-for="(file, i) in getFilesList(previewItem.content)"
+                :key="i"
+                class="flex items-center gap-2 p-2 bg-muted/50 rounded text-sm break-all font-mono"
+              >
+                <component
+                  :is="getFileIcon(file)"
+                  class="shrink-0 w-5 h-5 text-muted-foreground"
+                />
+                {{ file }}
+              </div>
+            </div>
+          </div>
           <div v-else class="flex justify-center">
             <LocalImage
               :src="previewItem.content"

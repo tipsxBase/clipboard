@@ -832,7 +832,7 @@ dependencies = [
 
 [[package]]
 name = "clipboard"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "active-win-pos-rs",
  "aes-gcm",
