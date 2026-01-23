@@ -198,8 +198,12 @@ pub fn update_clipboard_item_content(
     content: String,
     data_type: String,
     note: Option<String>,
+    html_content: Option<String>,
 ) -> Result<(), String> {
-    match state.db.update_content(id, content, data_type, note) {
+    match state
+        .db
+        .update_content(id, content, data_type, note, html_content)
+    {
         Ok(_) => {
             log::info!("Updated item content for id {}", id);
             Ok(())

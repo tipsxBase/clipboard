@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from "vue";
+import { onMounted, onUnmounted, ref, watch } from "vue";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useI18n } from "vue-i18n";
@@ -21,7 +21,6 @@ import {
   Code,
   ScanText,
   Folder,
-  NotepadText,
   Files,
   FileAudio,
   FileVideo,
@@ -30,6 +29,7 @@ import {
   FileImage,
   FileCode,
 } from "lucide-vue-next";
+import DOMPurify from "dompurify";
 import Button from "@/components/ui/button/Button.vue";
 import Input from "@/components/ui/input/Input.vue";
 import LocalImage from "@/components/LocalImage.vue";
@@ -66,6 +66,11 @@ const {
 
 const { config, loadConfig, setupConfigListeners } = useSettings();
 const isSelectingCollection = ref(false);
+const showHtml = ref(false);
+
+watch(previewItem, (newItem) => {
+  showHtml.value = !!newItem?.html_content;
+});
 
 const getCollectionName = (id?: number) => {
   if (!id) return undefined;
@@ -366,13 +371,6 @@ onUnmounted(() => {
                       getCollectionName(item.collection_id)
                     }}</span>
                   </div>
-                  <div
-                    v-if="item.note"
-                    class="flex items-center gap-1 bg-primary/10 text-primary px-1.5 py-0.5 rounded text-[10px]"
-                  >
-                    <NotepadText class="w-3 h-3" />
-                    <span class="max-w-[100px] truncate">{{ item.note }}</span>
-                  </div>
                 </div>
               </div>
 
@@ -628,11 +626,37 @@ onUnmounted(() => {
           </Button>
         </div>
         <div class="p-6 overflow-auto bg-muted/10">
-          <pre
-            v-if="previewItem.kind === 'text'"
-            class="font-mono text-sm text-foreground whitespace-pre-wrap break-all"
-            >{{ previewContent || previewItem.content }}</pre
-          >
+          <div v-if="previewItem.kind === 'text'" class="flex flex-col gap-2">
+            <div v-if="previewItem.html_content" class="flex justify-end">
+              <Button
+                size="sm"
+                variant="outline"
+                class="h-6 text-xs gap-1"
+                @click="showHtml = !showHtml"
+              >
+                <component :is="showHtml ? FileText : Code" class="w-3 h-3" />
+                {{ showHtml ? "Text" : "HTML" }}
+              </Button>
+            </div>
+            <div
+              v-if="showHtml && previewItem.html_content"
+              class="rounded-md border border-input bg-background shadow-sm overflow-auto text-sm leading-relaxed"
+            >
+              <div
+                class="p-4 min-w-full w-fit"
+                v-html="
+                  DOMPurify.sanitize(previewItem.html_content, {
+                    ADD_ATTR: ['style'],
+                  })
+                "
+              ></div>
+            </div>
+            <pre
+              v-else
+              class="font-mono text-sm text-foreground whitespace-pre-wrap break-all"
+              >{{ previewContent || previewItem.content }}</pre
+            >
+          </div>
           <div
             v-else-if="previewItem.kind === 'file'"
             class="flex flex-col gap-2"

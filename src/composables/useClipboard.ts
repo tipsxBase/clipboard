@@ -115,7 +115,7 @@ export function useClipboard() {
     () => {
       currentPage.value = 1;
       loadHistory(true);
-    }
+    },
   );
 
   const filteredHistory = computed(() => {
@@ -252,7 +252,8 @@ export function useClipboard() {
     id: number,
     content: string,
     dataType: string,
-    note?: string
+    note?: string,
+    html_content?: string,
   ) {
     try {
       await invoke("update_clipboard_item_content", {
@@ -260,6 +261,7 @@ export function useClipboard() {
         content,
         dataType,
         note,
+        htmlContent: html_content || null,
       });
       await loadHistory(true);
       showToast(t("collections.itemUpdated"));
@@ -294,7 +296,7 @@ export function useClipboard() {
         });
         history.value[realIndex].is_sensitive = newState as boolean;
         showToast(
-          newState ? t("toast.markedSensitive") : t("toast.unmarkedSensitive")
+          newState ? t("toast.markedSensitive") : t("toast.unmarkedSensitive"),
         );
       } catch (e) {
         console.error("Failed to toggle sensitive:", e);
@@ -390,7 +392,7 @@ export function useClipboard() {
 
   async function setItemCollection(
     itemId: number,
-    collectionId: number | null
+    collectionId: number | null,
   ) {
     try {
       await invoke("set_item_collection", { itemId, collectionId });

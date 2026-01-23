@@ -214,14 +214,17 @@ const {
 
 const showItemEditor = ref(false);
 const editingItem = ref<ClipboardItem | null>(null);
+const editingNoteOnly = ref(false);
 const showHtml = ref(false);
 
-watch(previewItem, () => {
-  showHtml.value = false;
+watch(previewItem, (newItem) => {
+  showHtml.value = !!newItem?.html_content;
+  editingNoteOnly.value = false;
 });
 
-function openEditor(item: ClipboardItem | null) {
+function openEditor(item: ClipboardItem | null, noteOnly: boolean = false) {
   editingItem.value = item;
+  editingNoteOnly.value = noteOnly;
   showItemEditor.value = true;
 }
 
@@ -230,9 +233,16 @@ function handleEditorSave(data: {
   dataType: string;
   note?: string;
   id?: number;
+  html_content?: string;
 }) {
   if (data.id) {
-    updateItemContent(data.id, data.content, data.dataType, data.note);
+    updateItemContent(
+      data.id,
+      data.content,
+      data.dataType,
+      data.note,
+      data.html_content,
+    );
   } else {
     addItem(data.content);
   }
@@ -249,7 +259,7 @@ const formSchema = toTypedSchema(
     compact_mode: z.boolean(),
     clear_pinned_on_clear: z.boolean(),
     clear_collected_on_clear: z.boolean(),
-  })
+  }),
 );
 
 const form = useForm({
@@ -396,7 +406,7 @@ function removeSensitiveApp(app: string) {
   const currentApps = form.values.sensitive_apps || [];
   form.setFieldValue(
     "sensitive_apps",
-    currentApps.filter((a) => a !== app)
+    currentApps.filter((a) => a !== app),
   );
   tempSensitiveApps.value = tempSensitiveApps.value.filter((a) => a !== app);
 }
@@ -734,13 +744,6 @@ onUnmounted(() => {
                     }}</span>
                   </div>
                   <div
-                    v-if="item.note"
-                    class="flex items-center gap-1 bg-primary/10 text-primary px-1.5 py-0.5 rounded text-[10px]"
-                  >
-                    <NotepadText class="w-3 h-3" />
-                    <span class="max-w-[100px] truncate">{{ item.note }}</span>
-                  </div>
-                  <div
                     v-if="item.html_content"
                     class="flex items-center gap-1 bg-sky-500/10 text-sky-500 px-1.5 py-0.5 rounded text-[10px]"
                     title="HTML"
@@ -878,6 +881,16 @@ onUnmounted(() => {
               @click.stop="openEditor(item)"
             >
               <Edit2 class="w-3.5 h-3.5" />
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              class="h-6 w-6 text-muted-foreground hover:text-primary"
+              :class="{ 'text-primary': !!item.note }"
+              :title="t('actions.editNote')"
+              @click.stop="openEditor(item, true)"
+            >
+              <NotepadText class="w-3.5 h-3.5" />
             </Button>
             <Button
               v-if="item.source_app"
@@ -1052,13 +1065,17 @@ onUnmounted(() => {
             </div>
             <div
               v-if="showHtml && previewItem.html_content"
-              class="p-4 bg-white text-black rounded-md border border-border overflow-auto"
-              v-html="
-                DOMPurify.sanitize(previewItem.html_content, {
-                  ADD_ATTR: ['style'],
-                })
-              "
-            ></div>
+              class="rounded-md border border-input bg-background shadow-sm overflow-auto text-sm leading-relaxed"
+            >
+              <div
+                class="p-4 min-w-full w-fit"
+                v-html="
+                  DOMPurify.sanitize(previewItem.html_content, {
+                    ADD_ATTR: ['style'],
+                  })
+                "
+              ></div>
+            </div>
             <pre
               v-else
               class="font-mono text-sm text-foreground whitespace-pre-wrap break-all"
@@ -1460,6 +1477,7 @@ onUnmounted(() => {
     <ItemEditorDialog
       :open="showItemEditor"
       :item="editingItem"
+      :note-only="editingNoteOnly"
       @update:open="showItemEditor = $event"
       @save="handleEditorSave"
     />

@@ -41,6 +41,7 @@ const messages = {
       ocr: "Extract Text",
       deleteItem: "Delete Item",
       edit: "Edit",
+      editNote: "Edit Note",
       addItem: "Add Item",
     },
     editor: {
@@ -49,6 +50,8 @@ const messages = {
       note: "Note/Alias",
       placeholder: "Enter content here...",
       notePlaceholder: "E.g. GitHub Password, Work Email...",
+      richTextWarning:
+        "Note: This item contains rich text formatting. Editing the content here will convert it to plain text.",
     },
     collections: {
       all: "All Items",
@@ -162,6 +165,7 @@ const messages = {
       addToCollection: "添加到收藏夹",
       ocr: "提取文字",
       deleteItem: "删除记录",
+      editNote: "修改备注",
       edit: "编辑",
       addItem: "手动添加",
     },
@@ -171,6 +175,8 @@ const messages = {
       note: "备注/标题",
       placeholder: "在此输入内容...",
       notePlaceholder: "例如：GitHub 密码, 公司邮箱...",
+      richTextWarning:
+        "注意：此条目包含富文本格式。修改内容将会丢失格式转换为纯文本。",
     },
     collections: {
       all: "全部记录",

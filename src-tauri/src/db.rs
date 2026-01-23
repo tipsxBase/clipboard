@@ -495,6 +495,7 @@ impl Database {
         new_content: String,
         new_data_type: String,
         new_note: Option<String>,
+        new_html_content: Option<String>,
     ) -> Result<()> {
         let conn = self.conn.lock().unwrap();
 
@@ -511,13 +512,24 @@ impl Database {
             new_content
         };
 
+        let final_html_content = if let Some(html) = new_html_content {
+            if is_sensitive {
+                Some(self.crypto.encrypt(&html).unwrap_or(html))
+            } else {
+                Some(html)
+            }
+        } else {
+            None
+        };
+
         conn.execute(
-            "UPDATE history SET content = ?1, data_type = ?2, timestamp = ?3, note = ?4, html_content = NULL WHERE id = ?5",
+            "UPDATE history SET content = ?1, data_type = ?2, timestamp = ?3, note = ?4, html_content = ?5 WHERE id = ?6",
             params![
                 final_content,
                 new_data_type,
                 Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
                 new_note,
+                final_html_content,
                 id
             ],
         )?;
