@@ -32,7 +32,16 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": null,
+      "assetProtocol": {
+        "scope": [
+          "$APPDATA/captures/*",
+          "$APPDATA/images/*",
+          "$HOME/.clipboard-manager/**",
+          "$APPCACHE/**"
+        ],
+        "enable": true
+      }
     }
   },
   "bundle": {

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, watch } from "vue";
 import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useI18n } from "vue-i18n";
 import { toTypedSchema } from "@vee-validate/zod";
@@ -43,6 +44,7 @@ import {
   FileSpreadsheet,
   FileImage,
   FileCode,
+  Camera,
 } from "lucide-vue-next";
 import DOMPurify from "dompurify";
 import Button from "@/components/ui/button/Button.vue";
@@ -80,6 +82,15 @@ import HighlightText from "@/components/HighlightText.vue";
 const { t } = useI18n();
 const { toastMessage } = useToast();
 const { formatTimeAgo } = useTimeAgo();
+
+const handleScreenshot = async () => {
+  try {
+    await invoke("start_capture");
+  } catch (e) {
+    console.error(e);
+    toastMessage.value = `Error: ${e}`;
+  }
+};
 
 const {
   collections,
@@ -599,6 +610,15 @@ onUnmounted(() => {
             :title="t('actions.addItem')"
           >
             <Plus class="w-4 h-4" />
+          </Button>
+          <Button
+            @click="handleScreenshot"
+            size="icon"
+            variant="ghost"
+            class="h-7 w-7"
+            title="Screenshot"
+          >
+            <Camera class="w-4 h-4" />
           </Button>
           <Button
             @click="openSettings"

@@ -1,13 +1,192 @@
 use chrono::Local;
 use std::fs;
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 use tauri_plugin_global_shortcut::GlobalShortcutExt;
 
-use crate::models::{AppConfig, ClipboardItem, Collection};
+use crate::models::{AppConfig, CaptureResult, ClipboardItem, Collection};
 use crate::ocr::recognize_text;
 use crate::state::AppState;
 use crate::tray::{update_pause_menu_item, update_tray_menu};
 use crate::utils::{classify_content, write_to_clipboard};
+
+#[tauri::command]
+pub async fn start_capture(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    log::info!("Starting screen capture...");
+
+    // Ensure cache directory exists
+    let cache_dir = app
+        .path()
+        .app_cache_dir()
+        .map_err(|e| e.to_string())?
+        .join("screenshots");
+    if !cache_dir.exists() {
+        fs::create_dir_all(&cache_dir).map_err(|e| e.to_string())?;
+    }
+
+    // 1. Capture screens FIRST (before showing window to avoid capturing our own UI)
+    let captures = tauri::async_runtime::spawn_blocking(move || {
+        crate::screenshot::capture_all_screens(cache_dir)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e)?;
+
+    log::info!("Capture complete: {} screens", captures.len());
+
+    // Save to state so windows can fetch it
+    if let Ok(mut c) = state.current_captures.lock() {
+        *c = Some(captures.clone());
+    }
+
+    // 2. Multi-window: Create a window for EACH screen
+    if captures.is_empty() {
+        return Err("No screens captured".to_string());
+    }
+
+    for cap in &captures {
+        let label = format!("screenshot_{}", cap.id);
+        // Use index.html with query param. App.vue handles component rendering based on window label.
+        let url = format!("index.html?screen_id={}", cap.id);
+        let window = if let Some(w) = app.get_webview_window(&label) {
+            w
+        } else {
+            // Convert physical pixels (from image capture) to logical pixels for Tauri window
+            let logical_width = cap.width as f64 / cap.scale_factor;
+            let logical_height = cap.height as f64 / cap.scale_factor;
+
+            // x and y from display_info are usually in logical coordinates
+            let logical_x = cap.x as f64;
+            let logical_y = cap.y as f64;
+            println!(
+                "Creating window for screen {}: {}x{} (logical) at ({},{}), scale: {}",
+                cap.id, logical_width, logical_height, cap.x, cap.y, cap.scale_factor
+            );
+            let builder =
+                tauri::WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::App(url.into()))
+                    .title("Screenshot")
+                    .decorations(false)
+                    //.transparent(true) // Configured via macOS specific helper below or handled by window effect
+                    .always_on_top(true)
+                    .skip_taskbar(true)
+                    .inner_size(logical_width, logical_height)
+                    .position(logical_x, logical_y)
+                    .resizable(false)
+                    .focused(true)
+                    .visible(false); // Start hidden to avoid flicker
+
+            // Apply macOS specific settings if possible via builder or after
+
+            let window = builder
+                .build()
+                .map_err(|e| format!("Failed to create window {}: {}", label, e))?;
+
+            // Manually enable transparency if supported by platform/tauri version without feature flag
+            // Or rely on window_vibrancy / platform specific code
+            #[cfg(not(target_os = "macos"))]
+            {
+                // On Windows/Linux, try basic transparent if method exists or ignore
+                // Since we don't have the feature, we can't call .transparent()
+                // But wait, changing background color to empty is handled in frontend mostly
+                // except window frame. decorations(false) handles frame.
+            }
+
+            window
+        };
+
+        // Set Mac specific level & transparency
+        // Note: transparent(true) covers basic transparency, but make_window_transparent ensures native compliance
+        #[cfg(target_os = "macos")]
+        {
+            let window_clone = window.clone();
+            app.run_on_main_thread(move || {
+                crate::screenshot::set_window_level_above_menubar(&window_clone);
+                // Also call make_window_transparent for robust behavior on macOS
+                crate::screenshot::make_window_transparent(&window_clone);
+            })
+            .map_err(|e| e.to_string())?;
+        }
+
+        // Ensure position and size
+        let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
+            x: cap.x,
+            y: cap.y,
+        }));
+        let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize {
+            width: cap.width,
+            height: cap.height,
+        }));
+
+        window.show().map_err(|e| e.to_string())?;
+        window.set_focus().map_err(|e| e.to_string())?;
+    }
+
+    // Emit event to ALL windows (they will filter by their ID)
+    app.emit("screenshot-captured", &captures)
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_capture_data(state: tauri::State<AppState>) -> Result<Vec<CaptureResult>, String> {
+    if let Ok(captures) = state.current_captures.lock() {
+        if let Some(c) = &*captures {
+            return Ok(c.clone());
+        }
+    }
+    Err("No capture data available".to_string())
+}
+
+#[tauri::command]
+pub async fn close_capture(app: tauri::AppHandle) -> Result<(), String> {
+    log::info!("Closing all screenshot windows");
+    for (label, window) in app.webview_windows() {
+        if label.starts_with("screenshot_") {
+            let _ = window.close();
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn save_captured_image(
+    app: tauri::AppHandle,
+    base64_data: String,
+) -> Result<String, String> {
+    // 1. Decode base64
+    // remove data:image/png;base64, prefix if present
+    let base64_clean = base64_data
+        .split(",")
+        .last()
+        .ok_or("Invalid base64 format")?;
+
+    use base64::{engine::general_purpose, Engine as _};
+    let data = general_purpose::STANDARD
+        .decode(base64_clean)
+        .map_err(|e| e.to_string())?;
+
+    // 2. Generate path
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+
+    // Ensure "images" subdirectory exists (optional, or just put in root)
+    // We can't easily rely on existing logic but let's check lib.rs for where we store images.
+    // Usually images are stored as files. Let's put them in `captures` folder.
+    let captures_dir = app_data_dir.join("captures");
+    if !captures_dir.exists() {
+        fs::create_dir_all(&captures_dir).map_err(|e| e.to_string())?;
+    }
+
+    let filename = format!("capture_{}.png", Local::now().format("%Y%m%d_%H%M%S_%f"));
+    let path = captures_dir.join(filename);
+
+    // 3. Write
+    fs::write(&path, data).map_err(|e| e.to_string())?;
+
+    Ok(path.to_string_lossy().to_string())
+}
 
 #[tauri::command]
 pub fn get_history(

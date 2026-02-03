@@ -23,3 +23,4 @@ dist-ssr
 *.sln
 *.sw?
 Feature.md
+.github/copilot-instructions.md

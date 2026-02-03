@@ -28,3 +28,13 @@ export interface AppConfig {
   clear_pinned_on_clear?: boolean;
   clear_collected_on_clear?: boolean;
 }
+
+export interface CaptureResult {
+  id: number;
+  path: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  scale_factor: number;
+}

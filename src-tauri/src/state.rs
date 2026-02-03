@@ -1,5 +1,5 @@
 use crate::db::Database;
-use crate::models::{AppConfig, ClipboardItem};
+use crate::models::{AppConfig, CaptureResult, ClipboardItem};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tauri::menu::MenuItem;
@@ -14,5 +14,6 @@ pub struct AppState {
     pub last_app_image_change: Arc<Mutex<Option<Vec<u8>>>>,
     pub last_app_file_change: Arc<Mutex<Option<Vec<String>>>>,
     pub paste_stack: Arc<Mutex<Vec<ClipboardItem>>>,
+    pub current_captures: Arc<Mutex<Option<Vec<CaptureResult>>>>,
     pub pause_item: Arc<Mutex<Option<MenuItem<Wry>>>>,
 }

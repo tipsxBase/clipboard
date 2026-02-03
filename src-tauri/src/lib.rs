@@ -4,6 +4,7 @@ mod db;
 mod models;
 mod monitor;
 mod ocr;
+mod screenshot;
 mod state;
 mod tray;
 mod utils;
@@ -63,6 +64,8 @@ pub fn run() {
     let last_app_file_change_state = last_app_file_change.clone();
     let paste_stack = Arc::new(Mutex::new(Vec::<ClipboardItem>::new()));
     let paste_stack_state = paste_stack.clone();
+    let current_captures = Arc::new(Mutex::new(None));
+    let current_captures_state = current_captures.clone();
 
     tauri::Builder::default()
         .plugin(
@@ -191,6 +194,7 @@ pub fn run() {
                 last_app_image_change: last_app_image_change_state.clone(),
                 last_app_file_change: last_app_file_change_state.clone(),
                 paste_stack: paste_stack_state.clone(),
+                current_captures: current_captures_state.clone(),
                 pause_item: Arc::new(Mutex::new(None)),
             });
 
@@ -324,12 +328,18 @@ pub fn run() {
             delete_collection,
             set_item_collection,
             set_paste_stack,
-            ocr_image
+            ocr_image,
+            start_capture,
+            close_capture,
+            get_capture_data,
+            save_captured_image
         ])
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::CloseRequested { api, .. } => {
-                let _ = window.hide();
-                api.prevent_close();
+                if window.label() == "popup" || window.label() == "main" {
+                    let _ = window.hide();
+                    api.prevent_close();
+                }
             }
             tauri::WindowEvent::Focused(false) => {
                 if window.label() == "popup" {
