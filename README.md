@@ -13,6 +13,7 @@ A lightweight, secure, and modern clipboard manager built with **Rust (Tauri v2)
 - **📋 History Management**: Automatically records text and images copied to your clipboard.
 - **🔍 Smart Search**: Quickly find clipboard history with full-text search.
 - **🖼️ Image Support**: View and paste images directly from your history.
+- **📸 Screenshot Tool**: Built-in screenshot tool with annotation support (rectangles, ellipses, arrows, pen, text).
 - **🔒 Privacy Focused**:
   - **Sensitive Data Detection**: Manually mark items as sensitive or configure sensitive apps.
   - **App Filtering**: Ignore clipboard changes from specific applications (e.g., password managers).
@@ -31,6 +32,22 @@ A lightweight, secure, and modern clipboard manager built with **Rust (Tauri v2)
 ### Global Shortcuts
 
 - **Toggle Clipboard History**: `Cmd+Shift+V` (macOS) or `Ctrl+Shift+V` (Windows/Linux) - _Default, configurable in settings._
+- **Take Screenshot**: Trigger screenshot mode to capture and annotate your screen.
+
+### Screenshot Tool
+
+The built-in screenshot tool allows you to capture, annotate, and save screenshots:
+
+1. **Trigger Screenshot**: Use the configured shortcut or menu option.
+2. **Select Area**: Click and drag to select the area you want to capture.
+3. **Annotate**: Use the toolbar to add annotations:
+   - **Rectangle** / **Ellipse** / **Arrow**: Draw shapes
+   - **Pen**: Free-hand drawing
+   - **Text**: Add text annotations
+4. **Save**: Press `Enter` or click the checkmark to save the screenshot to your clipboard.
+5. **Cancel**: Press `Esc` or click the X button to cancel.
+
+> **macOS Users**: On first use, macOS will request **Screen Recording** permission. Please grant this permission in System Settings > Privacy & Security > Screen Recording, then restart the app.
 
 ### Navigation (Popup Window)
 

@@ -186,11 +186,8 @@ onUnmounted(() => {
 const handleKeyDown = (e: KeyboardEvent) => {
   if (e.key === "Escape") {
     e.preventDefault();
-    if (selection.value) {
-      resetSelection();
-    } else {
-      close();
-    }
+    // ESC 键应该总是关闭所有截图窗口，不管是否有选区
+    close();
   } else if (e.key === "Enter" && selection.value) {
     e.preventDefault();
     confirmSelection();

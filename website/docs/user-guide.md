@@ -15,6 +15,58 @@ By default, you can use the following global shortcut to summon the clipboard hi
 
 > **Tip**: You can modify this shortcut in the application settings.
 
+### Screenshot Tool
+
+The built-in screenshot tool allows you to capture and annotate your screen:
+
+#### Taking a Screenshot
+
+1. **Trigger Screenshot**: Use the configured shortcut or menu option to enter screenshot mode.
+2. **Select Area**: Click and drag to select the area you want to capture. You can also:
+   - **Double-click** anywhere to capture the full screen
+   - **Click once** to select a small area (will auto-expand to full screen)
+3. **Adjust Selection**: Drag the edges or corners to resize the selection area.
+
+#### Annotation Tools
+
+Once you've selected an area, a toolbar will appear with the following tools:
+
+- **Rectangle** (□): Draw rectangular shapes
+- **Ellipse** (○): Draw circular/elliptical shapes
+- **Arrow** (→): Draw arrows to point at specific areas
+- **Pen** (✎): Free-hand drawing
+- **Text** (T): Add text annotations
+
+For each tool, you can customize:
+- **Color**: Choose from preset colors
+- **Line Width**: Adjust the thickness (except for text)
+
+#### Saving or Canceling
+
+- **Save**: Press `Enter` or click the checkmark (✓) button to save the screenshot to your clipboard
+- **Download**: Click the download button to save the screenshot as a file
+- **Reset**: Click the reset button to clear the selection and start over
+- **Cancel**: Press `Esc` or click the X button to exit without saving
+
+#### macOS Screen Recording Permission
+
+> **Important for macOS Users**
+
+On macOS 10.15 (Catalina) and later, apps require explicit permission to record the screen. When you first use the screenshot feature:
+
+1. macOS will display a permission dialog asking for **Screen Recording** access
+2. Click **"Allow"** to grant permission
+3. **Restart the application** for the permission to take effect
+
+If the dialog doesn't appear or you accidentally denied permission:
+
+1. Open **System Settings** (or System Preferences)
+2. Go to **Privacy & Security** > **Screen Recording**
+3. Find and check **"Clipboard Manager"** in the list
+4. **Restart the application**
+
+Without this permission, screenshots will only capture the desktop background, not other application windows.
+
 ### List Navigation
 
 To improve efficiency, we support multiple navigation methods so your hands don't have to leave the keyboard:
