@@ -1,6 +1,7 @@
 mod commands;
 mod crypto;
 mod db;
+mod file_manager;
 mod models;
 mod monitor;
 mod ocr;
@@ -22,6 +23,7 @@ use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
 use crate::commands::*;
 use crate::crypto::Crypto;
 use crate::db::Database;
+use crate::file_manager::FileManager;
 use crate::models::{AppConfig, ClipboardItem};
 use crate::monitor::ClipboardMonitor;
 use crate::state::AppState;
@@ -184,6 +186,21 @@ pub fn run() {
                 let _ = fs::create_dir_all(&images_dir);
             }
 
+            // 初始化截图临时目录
+            let screenshot_temp_dir = std::env::temp_dir().join("clipboard-manager-screenshots");
+            if !screenshot_temp_dir.exists() {
+                let _ = fs::create_dir_all(&screenshot_temp_dir);
+            }
+
+            // 初始化文件管理器
+            let file_manager = Arc::new(
+                FileManager::new(screenshot_temp_dir.clone())
+                    .expect("Failed to initialize file manager")
+            );
+
+            // 启动时清理过期文件（超过 24 小时）
+            let _ = file_manager.cleanup_expired_files(std::time::Duration::from_secs(24 * 3600));
+
             // 将状态交给 Tauri 管理
             app.manage(AppState {
                 db: db.clone(),
@@ -196,6 +213,7 @@ pub fn run() {
                 paste_stack: paste_stack_state.clone(),
                 current_captures: current_captures_state.clone(),
                 pause_item: Arc::new(Mutex::new(None)),
+                file_manager: file_manager.clone(),
             });
 
             // 托盘设置
@@ -332,7 +350,11 @@ pub fn run() {
             start_capture,
             close_capture,
             get_capture_data,
-            save_captured_image
+            save_captured_image,
+            cleanup_temp_files,
+            cleanup_expired_temp_files,
+            get_temp_file_count,
+            get_temp_directory
         ])
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::CloseRequested { api, .. } => {

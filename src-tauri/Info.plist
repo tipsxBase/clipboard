@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Application Information -->
+    <key>CFBundleName</key>
+    <string>Clipboard Manager</string>
+    
+    <key>CFBundleDisplayName</key>
+    <string>Clipboard Manager</string>
+    
+    <key>CFBundleIdentifier</key>
+    <string>com.dmxn.cliboard</string>
+    
+    <!-- Screen Recording Permission -->
+    <key>NSScreenCaptureDescription</key>
+    <string>此应用需要屏幕录制权限来捕获截图。This app needs screen recording permission to capture screenshots.</string>
+    
+    <!-- Accessibility Permission (for clipboard management) -->
+    <key>NSAppleEventsUsageDescription</key>
+    <string>此应用需要控制其他应用程序以管理剪贴板。This app needs to control other applications for clipboard management.</string>
+    
+    <!-- High Resolution Support -->
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    
+    <!-- Support for Retina displays -->
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+</dict>
+</plist>

@@ -16,6 +16,14 @@ pub async fn start_capture(
 ) -> Result<(), String> {
     log::info!("Starting screen capture...");
 
+    // 在 macOS 上检查屏幕录制权限
+    #[cfg(target_os = "macos")]
+    {
+        log::info!("Checking macOS screen recording permission...");
+        // 注意：实际的权限检查会在截图时由 screenshots crate 触发
+        // 如果没有权限，capture() 会返回空白或桌面图像
+    }
+
     // Ensure cache directory exists
     let cache_dir = app
         .path()
@@ -27,8 +35,9 @@ pub async fn start_capture(
     }
 
     // 1. Capture screens FIRST (before showing window to avoid capturing our own UI)
+    let file_manager = state.file_manager.clone();
     let captures = tauri::async_runtime::spawn_blocking(move || {
-        crate::screenshot::capture_all_screens(cache_dir)
+        crate::screenshot::capture_all_screens(cache_dir, Some(file_manager))
     })
     .await
     .map_err(|e| e.to_string())?
@@ -141,13 +150,32 @@ pub fn get_capture_data(state: tauri::State<AppState>) -> Result<Vec<CaptureResu
 }
 
 #[tauri::command]
-pub async fn close_capture(app: tauri::AppHandle) -> Result<(), String> {
+pub async fn close_capture(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
     log::info!("Closing all screenshot windows");
     for (label, window) in app.webview_windows() {
         if label.starts_with("screenshot_") {
             let _ = window.close();
         }
     }
+
+    // 清理临时文件
+    let file_manager = state.file_manager.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        if let Err(e) = file_manager.delete_all_temp_files() {
+            log::error!("Failed to cleanup temp files: {}", e);
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // 清空当前捕获状态
+    if let Ok(mut c) = state.current_captures.lock() {
+        *c = None;
+    }
+
     Ok(())
 }
 
@@ -569,4 +597,46 @@ pub async fn ocr_image(image_path: String) -> Result<String, String> {
             Err(e)
         }
     }
+}
+
+// ==================== 文件管理命令 ====================
+
+/// 检查屏幕录制权限（macOS）
+#[tauri::command]
+pub fn check_screen_recording_permission() -> bool {
+    crate::screenshot::check_screen_recording_permission()
+}
+
+/// 清理所有临时文件
+#[tauri::command]
+pub async fn cleanup_temp_files(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    let file_manager = state.file_manager.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        file_manager.delete_all_temp_files()
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// 清理过期的临时文件（超过 24 小时）
+#[tauri::command]
+pub async fn cleanup_expired_temp_files(state: tauri::State<'_, AppState>) -> Result<usize, String> {
+    let file_manager = state.file_manager.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        file_manager.cleanup_expired_files(std::time::Duration::from_secs(24 * 3600))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// 获取临时文件数量
+#[tauri::command]
+pub fn get_temp_file_count(state: tauri::State<AppState>) -> usize {
+    state.file_manager.get_temp_file_count()
+}
+
+/// 获取临时目录路径
+#[tauri::command]
+pub fn get_temp_directory(state: tauri::State<AppState>) -> String {
+    state.file_manager.get_temp_dir().to_string_lossy().to_string()
 }

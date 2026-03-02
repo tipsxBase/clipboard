@@ -38,3 +38,232 @@ export interface CaptureResult {
   height: number;
   scale_factor: number;
 }
+
+// ==================== 截图工具类型定义 ====================
+
+// 屏幕信息
+export interface ScreenInfo {
+  index: number;
+  x: number;          // 逻辑坐标
+  y: number;          // 逻辑坐标
+  width: number;      // 逻辑尺寸
+  height: number;     // 逻辑尺寸
+  scaleFactor: number; // DPI 缩放因子
+}
+
+// 点坐标
+export interface Point {
+  x: number;
+  y: number;
+}
+
+// 矩形区域
+export interface Rectangle {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+// 截图窗口
+export interface CaptureWindow {
+  id: string;
+  label: string;
+  screenIndex: number;
+  handle: any; // WebviewWindow 类型
+}
+
+// 临时文件
+export interface TempFile {
+  path: string;
+  createdAt: number;
+  screenIndex: number;
+}
+
+// 图片格式
+export type ImageFormat = 'png' | 'jpg' | 'webp';
+
+// 选区区域
+export interface SelectionRegion {
+  x: number;      // 物理像素
+  y: number;      // 物理像素
+  width: number;  // 物理像素
+  height: number; // 物理像素
+}
+
+// 标注工具类型
+export type AnnotationTool = 'rect' | 'ellipse' | 'arrow' | 'pen' | 'text' | 'mosaic' | 'blur' | null;
+
+// 标注样式
+export interface AnnotationStyle {
+  strokeColor: string;
+  strokeWidth: number;
+  fillColor: string;
+  fontSize?: number;
+  fontStyle?: 'normal' | 'bold' | 'italic';
+  arrowStyle?: 'single' | 'double';
+  mosaicSize?: number;
+  blurStrength?: number;
+}
+
+// 标注对象
+export interface Annotation {
+  id: string;
+  type: AnnotationTool;
+  data: any; // 具体数据结构取决于工具类型
+  style: AnnotationStyle;
+  createdAt: number;
+}
+
+// 历史记录条目
+export interface HistoryEntry {
+  timestamp: number;
+  state: string; // JSON 序列化的画布状态
+}
+
+// 截图历史项
+export interface ScreenshotHistoryItem {
+  id: string;
+  thumbnail: string; // Base64 缩略图
+  fullImage: string; // 完整图片路径
+  width: number;
+  height: number;
+  createdAt: number;
+  annotations: Annotation[];
+}
+
+// 截图会话
+export interface CaptureSession {
+  id: string;
+  screenIndex: number;
+  startTime: number;
+  selection: SelectionRegion | null;
+  annotations: Annotation[];
+  activeTool: AnnotationTool;
+  style: AnnotationStyle;
+}
+
+// 颜色信息
+export interface ColorInfo {
+  r: number;
+  g: number;
+  b: number;
+  hex: string;
+}
+
+// 工具栏位置
+export interface ToolbarPosition {
+  left: string;
+  top: string;
+}
+
+// 放大镜配置
+export interface MagnifierConfig {
+  size: number;        // 放大镜尺寸
+  zoomLevel: number;   // 放大倍数
+  visible: boolean;
+}
+
+// 快捷键配置
+export interface ShortcutConfig {
+  startCapture: string;      // 启动截图
+  confirmCapture: string;    // 确认截图
+  cancelCapture: string;     // 取消截图
+  toolRect: string;          // 矩形工具
+  toolEllipse: string;       // 椭圆工具
+  toolArrow: string;         // 箭头工具
+  toolPen: string;           // 画笔工具
+  toolText: string;          // 文字工具
+  toolMosaic: string;        // 马赛克工具
+  toolBlur: string;          // 模糊工具
+  undo: string;              // 撤销
+  redo: string;              // 重做
+}
+
+// 保存选项
+export interface SaveOptions {
+  defaultFormat: ImageFormat;
+  defaultQuality: number;     // 0-100
+  defaultPath: string;
+  autoSave: boolean;
+  copyToClipboard: boolean;
+}
+
+// 截图配置（扩展 AppConfig）
+export interface ScreenshotConfig {
+  shortcuts: ShortcutConfig;
+  saveOptions: SaveOptions;
+  maxHistorySize: number;
+  maxScreenshotHistory: number;
+}
+
+// 性能指标
+export interface PerformanceMetrics {
+  captureTime: number;      // 截图捕获耗时 (ms)
+  encodeTime: number;       // 图片编码耗时 (ms)
+  renderFPS: number;        // 画布渲染帧率
+  memoryUsage: number;      // 内存使用 (MB)
+  annotationCount: number;  // 标注对象数量
+  historySize: number;      // 历史记录大小
+}
+
+// 应用状态
+export interface AppState {
+  currentSession: CaptureSession | null;
+  activeWindows: CaptureWindow[];
+  tempFiles: TempFile[];
+  config: AppConfig;
+  performanceMetrics: PerformanceMetrics;
+}
+
+// 事件类型
+export type EventType =
+  | 'window:closed'
+  | 'window:all-closed'
+  | 'selection:created'
+  | 'selection:updated'
+  | 'selection:confirmed'
+  | 'selection:cancelled'
+  | 'annotation:created'
+  | 'annotation:updated'
+  | 'annotation:deleted'
+  | 'tool:changed'
+  | 'capture:started'
+  | 'capture:completed'
+  | 'capture:failed'
+  | 'file:cleanup-requested';
+
+// 事件负载
+export interface EventPayload {
+  [key: string]: any;
+}
+
+// 画布层类型
+export type CanvasLayerType = 'background' | 'mask' | 'annotation' | 'magnifier';
+
+// 画布层
+export interface CanvasLayer {
+  canvas: HTMLCanvasElement;
+  context: CanvasRenderingContext2D;
+  type: CanvasLayerType;
+}
+
+// 错误类型
+export enum ErrorType {
+  CAPTURE_FAILED = 'CAPTURE_FAILED',
+  WINDOW_CREATE_FAILED = 'WINDOW_CREATE_FAILED',
+  FILE_OPERATION_FAILED = 'FILE_OPERATION_FAILED',
+  CANVAS_RENDER_FAILED = 'CANVAS_RENDER_FAILED',
+  ANNOTATION_FAILED = 'ANNOTATION_FAILED',
+  CLIPBOARD_FAILED = 'CLIPBOARD_FAILED',
+  CONFIG_LOAD_FAILED = 'CONFIG_LOAD_FAILED',
+}
+
+// 应用错误
+export interface AppError {
+  type: ErrorType;
+  message: string;
+  details?: any;
+  timestamp: number;
+  recoverable: boolean;
+}

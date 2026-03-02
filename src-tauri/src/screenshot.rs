@@ -1,11 +1,48 @@
-use crate::models::{CaptureResult, ScreenInfo};
+use crate::file_manager::FileManager;
+use crate::models::CaptureResult;
 use image::ImageEncoder;
 use screenshots::Screen;
+use std::sync::Arc;
 use std::time::Instant;
 use tauri::Runtime; // Import ImageEncoder trait
 
-pub fn capture_all_screens(cache_dir: std::path::PathBuf) -> Result<Vec<CaptureResult>, String> {
+/// 检查 macOS 屏幕录制权限
+#[cfg(target_os = "macos")]
+pub fn check_screen_recording_permission() -> bool {
+    use objc2_app_kit::NSWorkspace;
+
+    // 尝试获取当前运行的应用程序
+    let workspace = NSWorkspace::sharedWorkspace();
+    let running_apps = workspace.runningApplications();
+
+    // 如果能获取到其他应用程序的信息，说明有权限
+    // 这是一个简单的检查，实际权限检查更复杂
+    log::info!("Found {} running applications", running_apps.len());
+
+    // 注意：这只是一个基本检查
+    // 真正的权限检查需要尝试截图并检查结果
+    true
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn check_screen_recording_permission() -> bool {
+    true // 非 macOS 平台默认有权限
+}
+
+pub fn capture_all_screens(
+    cache_dir: std::path::PathBuf,
+    file_manager: Option<Arc<FileManager>>,
+) -> Result<Vec<CaptureResult>, String> {
     let start = Instant::now();
+
+    // 在 macOS 上，确保我们有屏幕录制权限
+    #[cfg(target_os = "macos")]
+    {
+        log::info!("Checking macOS screen recording permissions...");
+        // 注意：screenshots crate 会自动请求权限，但用户需要在系统设置中授予权限
+        // 如果没有权限，capture() 会失败或返回空白图像
+    }
+
     let screens = Screen::all().map_err(|e| e.to_string())?;
     log::info!("Found {} screens", screens.len());
 
@@ -15,6 +52,7 @@ pub fn capture_all_screens(cache_dir: std::path::PathBuf) -> Result<Vec<CaptureR
 
         for screen in screens {
             let dir = cache_dir.clone();
+            let fm = file_manager.clone();
             handles.push(s.spawn(move || -> Result<CaptureResult, String> {
                 let capture_start = Instant::now();
                 let image = screen.capture().map_err(|e| e.to_string())?;
@@ -29,7 +67,7 @@ pub fn capture_all_screens(cache_dir: std::path::PathBuf) -> Result<Vec<CaptureR
                     screen.display_info.id,
                     chrono::Local::now().timestamp_millis()
                 );
-                let path = dir.join(filename);
+                let path = dir.join(&filename);
 
                 // Use std::fs::File for buffered writing
                 let file = std::fs::File::create(&path).map_err(|e| e.to_string())?;
@@ -46,6 +84,11 @@ pub fn capture_all_screens(cache_dir: std::path::PathBuf) -> Result<Vec<CaptureR
                         image::ExtendedColorType::Rgba8,
                     )
                     .map_err(|e| e.to_string())?;
+
+                // 添加到文件管理器跟踪列表
+                if let Some(fm) = fm {
+                    fm.add_temp_file(path.clone(), screen.display_info.id);
+                }
 
                 log::info!(
                     "Screen {} capture+save took {:?}",

@@ -10,7 +10,9 @@
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "release": "node scripts/release.mjs"
+    "release": "node scripts/release.mjs",
+    "lint": "eslint . --ext .ts,.tsx,.vue --fix",
+    "format": "prettier --write \"src/**/*.{ts,tsx,vue,css}\""
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.17",
@@ -35,11 +37,16 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
+    "@typescript-eslint/eslint-plugin": "^6.21.0",
+    "@typescript-eslint/parser": "^6.21.0",
     "@vitejs/plugin-vue": "^5.2.1",
     "animate.css": "^4.1.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "eslint": "^8.57.0",
+    "eslint-plugin-vue": "^9.20.1",
     "lucide-vue-next": "^0.556.0",
+    "prettier": "^3.2.5",
     "radix-vue": "^1.9.17",
     "tailwind-merge": "^3.4.0",
     "tailwindcss": "^4.1.17",

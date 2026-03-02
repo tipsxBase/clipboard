@@ -1,4 +1,5 @@
 use crate::db::Database;
+use crate::file_manager::FileManager;
 use crate::models::{AppConfig, CaptureResult, ClipboardItem};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -16,4 +17,5 @@ pub struct AppState {
     pub paste_stack: Arc<Mutex<Vec<ClipboardItem>>>,
     pub current_captures: Arc<Mutex<Option<Vec<CaptureResult>>>>,
     pub pause_item: Arc<Mutex<Option<MenuItem<Wry>>>>,
+    pub file_manager: Arc<FileManager>,
 }
