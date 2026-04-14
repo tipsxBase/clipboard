@@ -24,3 +24,9 @@ dist-ssr
 *.sw?
 Feature.md
 .github/copilot-instructions.md
+
+
+.claude
+.codex
+.github
+openspec
