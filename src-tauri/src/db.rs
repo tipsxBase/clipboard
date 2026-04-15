@@ -85,6 +85,23 @@ impl Database {
             tx.execute("PRAGMA user_version = 6", [])?;
         }
 
+        if version < 7 {
+            let _ = tx.execute(
+                "ALTER TABLE history ADD COLUMN is_snippet BOOLEAN NOT NULL DEFAULT 0",
+                [],
+            );
+            let _ = tx.execute(
+                "ALTER TABLE history ADD COLUMN is_favorite BOOLEAN NOT NULL DEFAULT 0",
+                [],
+            );
+            tx.execute("PRAGMA user_version = 7", [])?;
+        }
+
+        if version < 8 {
+            let _ = tx.execute("ALTER TABLE history ADD COLUMN screenshot_id INTEGER", []);
+            tx.execute("PRAGMA user_version = 8", [])?;
+        }
+
         tx.commit()?;
 
         // Add REGEXP function
@@ -114,27 +131,25 @@ impl Database {
         })
     }
 
-    pub fn get_history(
+    /// Build the shared WHERE clause and params for history queries.
+    /// Used by both `get_history` and `count_history_filtered` to ensure identical semantics.
+    fn build_history_filter(
         &self,
-        page: usize,
-        page_size: usize,
-        query: Option<String>,
+        query: &Option<String>,
         search_regex: bool,
         search_case_sensitive: bool,
         collection_id: Option<i64>,
-    ) -> Result<Vec<ClipboardItem>> {
-        let conn = self.conn.lock().unwrap();
-        let offset = (page - 1) * page_size;
-
-        let mut sql = String::from("SELECT id, content, kind, timestamp, is_sensitive, is_pinned, source_app, data_type, collection_id, note, html_content FROM history WHERE 1=1");
+        active_filter: &Option<String>,
+        source_app: &Option<String>,
+        time_range: &Option<String>,
+    ) -> (String, Vec<Box<dyn rusqlite::ToSql>>) {
+        let mut sql = String::from(" WHERE 1=1");
         let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
 
         if let Some(q) = query {
             if !q.is_empty() {
                 if search_regex {
                     sql.push_str(" AND (content REGEXP ? OR note REGEXP ?)");
-                    // If case insensitive, we prepend (?i) flag to the regex string.
-                    // This flag works in Rust regex crate which we used in create_scalar_function.
                     let final_query = if search_case_sensitive {
                         q.clone()
                     } else {
@@ -144,19 +159,8 @@ impl Database {
                     params.push(Box::new(final_query));
                 } else {
                     if search_case_sensitive {
-                        // SQLite LIKE is case-insensitive by default for ASCII characters.
-                        // To make it case-sensitive, we can use GLOB which is case-sensitive (and uses * instead of %),
-                        // OR we can use the `PRAGMA case_sensitive_like = ON` command (but that is connection wide),
-                        // OR we can simply use the binary comparison for exact match or INSTR for substrings,
-                        // BUT for pattern matching usually `GLOB` is the way.
-                        // However, GLOB uses * and ?, not %. So we need to reformat the pattern or just use INSTR > 0 for simpler specific contains check.
-                        // Since `q` here is a substring (like %q%), INSTR(content, q) > 0 does the job and is case-sensitive by default (if not explicitly COLLATE NOCASE).
-                        // Wait, sqlite INSTR IS case-sensitive by default? No, it depends on collation?
-                        // Actually, GLOB is the standard way for case-sensitive pattern matching in SQLite.
-                        // wildcard: * matches any sequence, ? matches any single char.
-
                         sql.push_str(" AND (content GLOB ? OR note GLOB ?)");
-                        let pattern = format!("*{}*", q); // Using * for GLOB
+                        let pattern = format!("*{}*", q);
                         params.push(Box::new(pattern.clone()));
                         params.push(Box::new(pattern));
                     } else {
@@ -174,7 +178,100 @@ impl Database {
             params.push(Box::new(cid));
         }
 
-        sql.push_str(" ORDER BY is_pinned DESC, timestamp DESC LIMIT ? OFFSET ?");
+        if let Some(filter) = active_filter {
+            match filter.as_str() {
+                "text" => sql.push_str(" AND kind = 'text'"),
+                "image" => sql.push_str(" AND kind = 'image'"),
+                "file" => sql.push_str(" AND kind = 'file'"),
+                "sensitive" => sql.push_str(" AND is_sensitive = 1"),
+                "snippet" => sql.push_str(" AND is_snippet = 1"),
+                "url" | "email" | "code" | "phone" => {
+                    sql.push_str(" AND data_type = ?");
+                    params.push(Box::new(filter.clone()));
+                }
+                // "all" or unknown → no additional filter
+                _ => {}
+            }
+        }
+
+        if let Some(app) = source_app {
+            if !app.is_empty() {
+                sql.push_str(" AND source_app = ?");
+                params.push(Box::new(app.clone()));
+            }
+        }
+
+        if let Some(range) = time_range {
+            let now = chrono::Local::now();
+            let cutoff = match range.as_str() {
+                "today" => Some(now.date_naive().and_hms_opt(0, 0, 0).unwrap()),
+                "yesterday" => Some(
+                    (now.date_naive() - chrono::Duration::days(1))
+                        .and_hms_opt(0, 0, 0)
+                        .unwrap(),
+                ),
+                "week" => Some(
+                    (now.date_naive() - chrono::Duration::days(7))
+                        .and_hms_opt(0, 0, 0)
+                        .unwrap(),
+                ),
+                "month" => Some(
+                    (now.date_naive() - chrono::Duration::days(30))
+                        .and_hms_opt(0, 0, 0)
+                        .unwrap(),
+                ),
+                _ => None,
+            };
+            if let Some(cutoff_time) = cutoff {
+                sql.push_str(" AND timestamp >= ?");
+                params.push(Box::new(
+                    cutoff_time.format("%Y-%m-%d %H:%M:%S").to_string(),
+                ));
+            }
+        }
+
+        (sql, params)
+    }
+
+    pub fn get_history(
+        &self,
+        page: usize,
+        page_size: usize,
+        query: Option<String>,
+        search_regex: bool,
+        search_case_sensitive: bool,
+        collection_id: Option<i64>,
+        active_filter: Option<String>,
+        source_app: Option<String>,
+        time_range: Option<String>,
+        sort_mode: Option<String>,
+    ) -> Result<Vec<ClipboardItem>> {
+        let conn = self.conn.lock().unwrap();
+        let offset = (page - 1) * page_size;
+
+        let (where_clause, mut params) = self.build_history_filter(
+            &query,
+            search_regex,
+            search_case_sensitive,
+            collection_id,
+            &active_filter,
+            &source_app,
+            &time_range,
+        );
+
+        let mut sql = format!(
+            "SELECT id, content, kind, timestamp, is_sensitive, is_pinned, source_app, data_type, collection_id, note, html_content, is_snippet, screenshot_id FROM history{}",
+            where_clause
+        );
+
+        let order_clause = match sort_mode.as_deref() {
+            Some("oldest") => " ORDER BY is_pinned DESC, timestamp ASC",
+            Some("source_app") => " ORDER BY is_pinned DESC, source_app ASC, timestamp DESC",
+            // "recent" or default
+            _ => " ORDER BY is_pinned DESC, timestamp DESC",
+        };
+        sql.push_str(order_clause);
+        sql.push_str(" LIMIT ? OFFSET ?");
         params.push(Box::new(page_size));
         params.push(Box::new(offset));
 
@@ -195,6 +292,8 @@ impl Database {
             let collection_id: Option<i64> = row.get(8)?;
             let note: Option<String> = row.get(9)?;
             let html_content: Option<String> = row.get(10)?;
+            let is_snippet: bool = row.get(11)?;
+            let screenshot_id: Option<i64> = row.get(12)?;
 
             let final_content = if is_sensitive && kind == "text" {
                 self.crypto.decrypt(&content).unwrap_or(content)
@@ -224,6 +323,8 @@ impl Database {
                 collection_id,
                 note,
                 html_content: final_html,
+                is_snippet,
+                screenshot_id,
             })
         })?;
 
@@ -265,7 +366,7 @@ impl Database {
         if updated_count == 0 {
             // Insert new item
             conn.execute(
-                "INSERT INTO history (content, kind, timestamp, is_sensitive, is_pinned, source_app, data_type, collection_id, note, html_content) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                "INSERT INTO history (content, kind, timestamp, is_sensitive, is_pinned, source_app, data_type, collection_id, note, html_content, is_snippet, screenshot_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
                 params![
                     content_to_store,
                     item.kind,
@@ -276,7 +377,9 @@ impl Database {
                     item.data_type,
                     item.collection_id,
                     item.note,
-                    html_to_store
+                    html_to_store,
+                    item.is_snippet,
+                    item.screenshot_id
                 ],
             )?;
         }
@@ -286,23 +389,27 @@ impl Database {
         if count > max_size {
             let delete_count = count - max_size;
 
-            // Fetch items to be deleted first (oldest timestamp, NOT pinned)
+            // Use unified eligibility rule: not pinned AND not in a collection
+            // First collect IDs of items to delete, then delete by those exact IDs
             let mut stmt = conn.prepare(&format!(
-                "SELECT content, kind, timestamp, is_sensitive, is_pinned, source_app, data_type, collection_id, note, html_content FROM history WHERE is_pinned = 0 ORDER BY timestamp ASC LIMIT {}",
+                "SELECT id, content, kind, timestamp, is_sensitive, is_pinned, source_app, data_type, collection_id, note, html_content, is_snippet, screenshot_id FROM history WHERE is_pinned = 0 AND collection_id IS NULL AND is_snippet = 0 ORDER BY timestamp ASC LIMIT {}",
                 delete_count
             ))?;
 
             let rows = stmt.query_map([], |row| {
-                let content: String = row.get(0)?;
-                let kind: String = row.get(1)?;
-                let timestamp: String = row.get(2)?;
-                let is_sensitive: bool = row.get(3)?;
-                let is_pinned: bool = row.get(4)?;
-                let source_app: Option<String> = row.get(5)?;
-                let data_type: String = row.get(6)?;
-                let collection_id: Option<i64> = row.get(7)?;
-                let note: Option<String> = row.get(8)?;
-                let html_content: Option<String> = row.get(9)?;
+                let id: i64 = row.get(0)?;
+                let content: String = row.get(1)?;
+                let kind: String = row.get(2)?;
+                let timestamp: String = row.get(3)?;
+                let is_sensitive: bool = row.get(4)?;
+                let is_pinned: bool = row.get(5)?;
+                let source_app: Option<String> = row.get(6)?;
+                let data_type: String = row.get(7)?;
+                let collection_id: Option<i64> = row.get(8)?;
+                let note: Option<String> = row.get(9)?;
+                let html_content: Option<String> = row.get(10)?;
+                let is_snippet: bool = row.get(11)?;
+                let screenshot_id: Option<i64> = row.get(12)?;
 
                 let final_content = if is_sensitive && kind == "text" {
                     self.crypto.decrypt(&content).unwrap_or(content)
@@ -321,7 +428,7 @@ impl Database {
                 };
 
                 Ok(ClipboardItem {
-                    id: None,
+                    id: Some(id),
                     content: final_content,
                     kind,
                     timestamp,
@@ -332,6 +439,8 @@ impl Database {
                     collection_id,
                     note,
                     html_content: final_html,
+                    is_snippet,
+                    screenshot_id,
                 })
             })?;
 
@@ -341,14 +450,18 @@ impl Database {
                 }
             }
 
-            // Delete them
-            conn.execute(
-                &format!(
-                    "DELETE FROM history WHERE id IN (SELECT id FROM history WHERE is_pinned = 0 AND collection_id IS NULL ORDER BY timestamp ASC LIMIT {})",
-                    delete_count
-                ),
-                [],
-            )?;
+            // Delete by exact IDs collected above
+            if !pruned_items.is_empty() {
+                let ids: Vec<String> = pruned_items
+                    .iter()
+                    .filter_map(|item| item.id.map(|id| id.to_string()))
+                    .collect();
+                let id_list = ids.join(",");
+                conn.execute(
+                    &format!("DELETE FROM history WHERE id IN ({})", id_list),
+                    [],
+                )?;
+            }
         }
 
         Ok(pruned_items)
@@ -363,7 +476,7 @@ impl Database {
         // Get the ID and details of the item at the specified offset
         let item: Option<(i64, ClipboardItem)> = conn
             .query_row(
-                "SELECT id, content, kind, timestamp, is_sensitive, is_pinned, source_app, data_type, collection_id, note, html_content FROM history ORDER BY is_pinned DESC, timestamp DESC LIMIT 1 OFFSET ?1",
+                "SELECT id, content, kind, timestamp, is_sensitive, is_pinned, source_app, data_type, collection_id, note, html_content, is_snippet, screenshot_id FROM history ORDER BY is_pinned DESC, timestamp DESC LIMIT 1 OFFSET ?1",
                 params![index],
                 |row| {
                     let id: i64 = row.get(0)?;
@@ -377,6 +490,8 @@ impl Database {
                     let collection_id: Option<i64> = row.get(8)?;
                     let note: Option<String> = row.get(9)?;
                     let html_content: Option<String> = row.get(10)?;
+                    let is_snippet: bool = row.get(11)?;
+                    let screenshot_id: Option<i64> = row.get(12)?;
 
                     let final_content = if is_sensitive && kind == "text" {
                         self.crypto.decrypt(&content).unwrap_or(content)
@@ -408,6 +523,8 @@ impl Database {
                             collection_id,
                             note,
                             html_content: final_html,
+                            is_snippet,
+                            screenshot_id,
                         },
                     ))
                 },
@@ -489,6 +606,21 @@ impl Database {
         }
     }
 
+    pub fn toggle_snippet(&self, id: i64) -> Result<bool> {
+        let conn = self.conn.lock().unwrap();
+        let current: bool = conn.query_row(
+            "SELECT is_snippet FROM history WHERE id = ?1",
+            params![id],
+            |row| row.get(0),
+        )?;
+        let new_state = !current;
+        conn.execute(
+            "UPDATE history SET is_snippet = ?1 WHERE id = ?2",
+            params![new_state, id],
+        )?;
+        Ok(new_state)
+    }
+
     pub fn update_content(
         &self,
         id: i64,
@@ -552,6 +684,8 @@ impl Database {
         if !clear_collected_on_clear {
             conditions.push("collection_id IS NULL");
         }
+        // Snippets are always exempt from clearing
+        conditions.push("is_snippet = 0");
         // 如果都为 true，则不加条件，全部清除
         let where_clause = if conditions.is_empty() {
             String::from("")
@@ -561,7 +695,7 @@ impl Database {
 
         // 查询所有将要被删除的项
         let select_sql = format!(
-            "SELECT id, content, kind, timestamp, is_sensitive, is_pinned, source_app, data_type, collection_id, note, html_content FROM history {}",
+            "SELECT id, content, kind, timestamp, is_sensitive, is_pinned, source_app, data_type, collection_id, note, html_content, is_snippet, screenshot_id FROM history {}",
             where_clause
         );
         let mut stmt = conn.prepare(&select_sql)?;
@@ -577,6 +711,8 @@ impl Database {
             let collection_id: Option<i64> = row.get(8)?;
             let note: Option<String> = row.get(9)?;
             let html_content: Option<String> = row.get(10)?;
+            let is_snippet: bool = row.get(11)?;
+            let screenshot_id: Option<i64> = row.get(12)?;
 
             let final_content = if is_sensitive && kind == "text" {
                 self.crypto.decrypt(&content).unwrap_or(content)
@@ -606,6 +742,8 @@ impl Database {
                 collection_id,
                 note,
                 html_content: final_html,
+                is_snippet,
+                screenshot_id,
             })
         })?;
 
@@ -639,9 +777,74 @@ impl Database {
         }
     }
 
+    pub fn get_item_by_id(&self, id: i64) -> Result<Option<ClipboardItem>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, content, kind, timestamp, is_sensitive, is_pinned, source_app, data_type, collection_id, note, html_content, is_snippet, screenshot_id FROM history WHERE id = ?1",
+        )?;
+        let item = stmt
+            .query_row(params![id], |row| {
+                let is_sensitive: bool = row.get(4)?;
+                let kind: String = row.get(2)?;
+                let raw: String = row.get(1)?;
+                let content = if is_sensitive && kind == "text" {
+                    self.crypto.decrypt(&raw).unwrap_or(raw)
+                } else {
+                    raw
+                };
+                let screenshot_id: Option<i64> = row.get(12)?;
+                Ok(ClipboardItem {
+                    id: row.get(0)?,
+                    content,
+                    kind,
+                    timestamp: row.get(3)?,
+                    is_sensitive,
+                    is_pinned: row.get(5)?,
+                    source_app: row.get(6)?,
+                    data_type: row.get(7)?,
+                    collection_id: row.get(8)?,
+                    note: row.get(9)?,
+                    html_content: row.get(10)?,
+                    is_snippet: row.get(11)?,
+                    screenshot_id,
+                })
+            })
+            .optional()?;
+        Ok(item)
+    }
+
     pub fn count_history(&self) -> Result<usize> {
         let conn = self.conn.lock().unwrap();
         let count: usize = conn.query_row("SELECT COUNT(*) FROM history", [], |row| row.get(0))?;
+        Ok(count)
+    }
+
+    pub fn count_history_filtered(
+        &self,
+        query: Option<String>,
+        search_regex: bool,
+        search_case_sensitive: bool,
+        collection_id: Option<i64>,
+        active_filter: Option<String>,
+        source_app: Option<String>,
+        time_range: Option<String>,
+    ) -> Result<usize> {
+        let conn = self.conn.lock().unwrap();
+
+        let (where_clause, params) = self.build_history_filter(
+            &query,
+            search_regex,
+            search_case_sensitive,
+            collection_id,
+            &active_filter,
+            &source_app,
+            &time_range,
+        );
+
+        let sql = format!("SELECT COUNT(*) FROM history{}", where_clause);
+        let mut stmt = conn.prepare(&sql)?;
+        let params_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+        let count: usize = stmt.query_row(params_refs.as_slice(), |row| row.get(0))?;
         Ok(count)
     }
 
@@ -708,5 +911,748 @@ impl Database {
             params![collection_id, item_id],
         )?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::crypto::Crypto;
+    use std::sync::Arc;
+    use tempfile::TempDir;
+
+    /// Helper: create a Database backed by a temp directory
+    fn setup_db() -> (Database, TempDir) {
+        let tmp = TempDir::new().unwrap();
+        let db_path = tmp.path().join("test.db");
+        let key_path = tmp.path().join("test.key");
+        let crypto = Arc::new(Crypto::new(&key_path));
+        let db = Database::new(&db_path, crypto).unwrap();
+        (db, tmp)
+    }
+
+    /// Helper: build a minimal text item
+    fn text_item(content: &str) -> ClipboardItem {
+        ClipboardItem {
+            id: None,
+            content: content.to_string(),
+            kind: "text".to_string(),
+            timestamp: chrono::Local::now()
+                .format("%Y-%m-%d %H:%M:%S%.3f")
+                .to_string(),
+            is_sensitive: false,
+            is_pinned: false,
+            source_app: None,
+            data_type: "text".to_string(),
+            collection_id: None,
+            note: None,
+            html_content: None,
+            is_snippet: false,
+            screenshot_id: None,
+        }
+    }
+
+    /// Helper: build a minimal image item whose content is a file path
+    fn image_item(path: &str) -> ClipboardItem {
+        ClipboardItem {
+            id: None,
+            content: path.to_string(),
+            kind: "image".to_string(),
+            timestamp: chrono::Local::now()
+                .format("%Y-%m-%d %H:%M:%S%.3f")
+                .to_string(),
+            is_sensitive: false,
+            is_pinned: false,
+            source_app: None,
+            data_type: "image".to_string(),
+            collection_id: None,
+            note: None,
+            html_content: None,
+            is_snippet: false,
+            screenshot_id: None,
+        }
+    }
+
+    // -------------------------------------------------------
+    // 3.1  Automatic pruning with pinned / collected / image
+    // -------------------------------------------------------
+
+    #[test]
+    fn pruning_skips_pinned_items() {
+        let (db, _tmp) = setup_db();
+        let max_size = 3;
+
+        // Insert 3 items, pin the first one
+        for i in 0..3 {
+            let item = text_item(&format!("item-{}", i));
+            db.insert_item(&item, max_size).unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+
+        // Pin the oldest item (id=1)
+        {
+            let conn = db.conn.lock().unwrap();
+            conn.execute("UPDATE history SET is_pinned = 1 WHERE id = 1", [])
+                .unwrap();
+        }
+
+        // Now insert a 4th item which should trigger pruning
+        let new_item = text_item("item-3");
+        let pruned = db.insert_item(&new_item, max_size).unwrap();
+
+        // Pruned items must NOT include the pinned one
+        assert!(!pruned.is_empty(), "should prune something");
+        for p in &pruned {
+            assert!(!p.is_pinned, "pinned item must not be pruned");
+        }
+
+        // The pinned item should still exist
+        let conn = db.conn.lock().unwrap();
+        let pinned_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM history WHERE is_pinned = 1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(pinned_count, 1, "pinned item must survive pruning");
+    }
+
+    #[test]
+    fn pruning_skips_collected_items() {
+        let (db, _tmp) = setup_db();
+        let max_size = 3;
+
+        // Create a collection
+        let coll = db.create_collection("test-coll".to_string()).unwrap();
+
+        // Insert 3 items, assign first to collection
+        for i in 0..3 {
+            let item = text_item(&format!("item-{}", i));
+            db.insert_item(&item, max_size).unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        db.set_item_collection(1, Some(coll.id)).unwrap();
+
+        // Insert a 4th item
+        let pruned = db.insert_item(&text_item("item-3"), max_size).unwrap();
+
+        // Pruned should NOT include the collected item
+        for p in &pruned {
+            assert!(
+                p.collection_id.is_none(),
+                "collected item must not be pruned"
+            );
+        }
+
+        // The collected item should still exist
+        let conn = db.conn.lock().unwrap();
+        let coll_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM history WHERE collection_id IS NOT NULL",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(coll_count, 1, "collected item must survive pruning");
+    }
+
+    #[test]
+    fn pruned_items_match_actual_deletions() {
+        let (db, _tmp) = setup_db();
+        let max_size = 2;
+
+        // Insert max_size items
+        for i in 0..2 {
+            db.insert_item(&text_item(&format!("old-{}", i)), max_size)
+                .unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+
+        // One more triggers pruning of 1 item
+        let pruned = db.insert_item(&text_item("new"), max_size).unwrap();
+        assert_eq!(pruned.len(), 1, "should prune exactly 1 item");
+
+        // Verify the pruned item is gone
+        let pruned_id = pruned[0].id.unwrap();
+        let conn = db.conn.lock().unwrap();
+        let exists: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM history WHERE id = ?1",
+                params![pruned_id],
+                |r| r.get::<_, i64>(0),
+            )
+            .map(|c| c > 0)
+            .unwrap();
+        assert!(!exists, "pruned item must be deleted from database");
+    }
+
+    #[test]
+    fn pruning_returns_image_items_for_file_cleanup() {
+        let (db, tmp) = setup_db();
+        let max_size = 2;
+
+        // Create a fake image file
+        let img_path = tmp.path().join("test.png");
+        std::fs::write(&img_path, b"fake-image-data").unwrap();
+
+        // Insert an image item and a text item
+        db.insert_item(&image_item(img_path.to_str().unwrap()), max_size)
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        db.insert_item(&text_item("text-1"), max_size).unwrap();
+
+        // Insert one more, triggering prune of the oldest (image)
+        let pruned = db.insert_item(&text_item("text-2"), max_size).unwrap();
+
+        // The pruned list must contain the image item so the caller can clean the file
+        let image_pruned: Vec<_> = pruned.iter().filter(|p| p.kind == "image").collect();
+        assert_eq!(image_pruned.len(), 1, "image item should be in pruned list");
+        assert_eq!(
+            image_pruned[0].content,
+            img_path.to_string_lossy().to_string()
+        );
+    }
+
+    // -------------------------------------------------------
+    // 3.2  Manual delete and clear-history asset cleanup
+    // -------------------------------------------------------
+
+    #[test]
+    fn delete_item_returns_deleted_item() {
+        let (db, _tmp) = setup_db();
+        db.insert_item(&text_item("hello"), 100).unwrap();
+
+        let deleted = db.delete_item(0).unwrap();
+        assert!(deleted.is_some(), "should return the deleted item");
+        assert_eq!(deleted.unwrap().content, "hello");
+
+        // Verify it's gone
+        assert_eq!(db.count_history().unwrap(), 0);
+    }
+
+    #[test]
+    fn clear_history_respects_pinned_flag() {
+        let (db, _tmp) = setup_db();
+
+        // Insert items and pin one
+        db.insert_item(&text_item("keep-me"), 100).unwrap();
+        db.insert_item(&text_item("delete-me"), 100).unwrap();
+        {
+            let conn = db.conn.lock().unwrap();
+            conn.execute("UPDATE history SET is_pinned = 1 WHERE id = 1", [])
+                .unwrap();
+        }
+
+        // Clear without clearing pinned
+        let cleared = db.clear_history(false, false).unwrap();
+        assert_eq!(cleared.len(), 1, "should only clear non-pinned");
+        assert_eq!(cleared[0].content, "delete-me");
+
+        // Pinned item still exists
+        assert_eq!(db.count_history().unwrap(), 1);
+    }
+
+    #[test]
+    fn clear_history_respects_collected_flag() {
+        let (db, _tmp) = setup_db();
+
+        let coll = db.create_collection("coll".to_string()).unwrap();
+        db.insert_item(&text_item("collected"), 100).unwrap();
+        db.insert_item(&text_item("normal"), 100).unwrap();
+        db.set_item_collection(1, Some(coll.id)).unwrap();
+
+        // Clear without clearing collected
+        let cleared = db.clear_history(false, false).unwrap();
+        assert_eq!(cleared.len(), 1, "should only clear non-collected");
+        assert_eq!(cleared[0].content, "normal");
+
+        assert_eq!(db.count_history().unwrap(), 1);
+    }
+
+    #[test]
+    fn clear_history_clears_everything_when_flags_set() {
+        let (db, _tmp) = setup_db();
+
+        let coll = db.create_collection("coll".to_string()).unwrap();
+        db.insert_item(&text_item("pinned"), 100).unwrap();
+        db.insert_item(&text_item("collected"), 100).unwrap();
+        db.insert_item(&text_item("normal"), 100).unwrap();
+        {
+            let conn = db.conn.lock().unwrap();
+            conn.execute("UPDATE history SET is_pinned = 1 WHERE id = 1", [])
+                .unwrap();
+        }
+        db.set_item_collection(2, Some(coll.id)).unwrap();
+
+        // Clear everything
+        let cleared = db.clear_history(true, true).unwrap();
+        assert_eq!(cleared.len(), 3, "should clear all items");
+        assert_eq!(db.count_history().unwrap(), 0);
+    }
+
+    #[test]
+    fn clear_history_returns_image_items_for_cleanup() {
+        let (db, tmp) = setup_db();
+
+        let img_path = tmp.path().join("img.png");
+        std::fs::write(&img_path, b"data").unwrap();
+
+        db.insert_item(&image_item(img_path.to_str().unwrap()), 100)
+            .unwrap();
+        db.insert_item(&text_item("text"), 100).unwrap();
+
+        let cleared = db.clear_history(false, false).unwrap();
+        let images: Vec<_> = cleared.iter().filter(|i| i.kind == "image").collect();
+        assert_eq!(
+            images.len(),
+            1,
+            "should include image items for file cleanup"
+        );
+    }
+
+    // -------------------------------------------------------
+    // Helper for typed items
+    // -------------------------------------------------------
+
+    fn typed_item(content: &str, data_type: &str) -> ClipboardItem {
+        ClipboardItem {
+            id: None,
+            content: content.to_string(),
+            kind: "text".to_string(),
+            timestamp: chrono::Local::now()
+                .format("%Y-%m-%d %H:%M:%S%.3f")
+                .to_string(),
+            is_sensitive: false,
+            is_pinned: false,
+            source_app: None,
+            data_type: data_type.to_string(),
+            collection_id: None,
+            note: None,
+            html_content: None,
+            is_snippet: false,
+            screenshot_id: None,
+        }
+    }
+
+    fn sensitive_item(content: &str) -> ClipboardItem {
+        ClipboardItem {
+            id: None,
+            content: content.to_string(),
+            kind: "text".to_string(),
+            timestamp: chrono::Local::now()
+                .format("%Y-%m-%d %H:%M:%S%.3f")
+                .to_string(),
+            is_sensitive: true,
+            is_pinned: false,
+            source_app: None,
+            data_type: "text".to_string(),
+            collection_id: None,
+            note: None,
+            html_content: None,
+            is_snippet: false,
+            screenshot_id: None,
+        }
+    }
+
+    // -------------------------------------------------------
+    // 3.1  Type-filtered retrieval and matching filtered counts
+    // -------------------------------------------------------
+
+    #[test]
+    fn filter_by_text_kind() {
+        let (db, tmp) = setup_db();
+        let img_path = tmp.path().join("test.png");
+        std::fs::write(&img_path, b"img").unwrap();
+
+        db.insert_item(&text_item("hello"), 100).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        db.insert_item(&image_item(img_path.to_str().unwrap()), 100)
+            .unwrap();
+
+        let results = db
+            .get_history(
+                1,
+                50,
+                None,
+                false,
+                false,
+                None,
+                Some("text".to_string()),
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].kind, "text");
+
+        let count = db
+            .count_history_filtered(
+                None,
+                false,
+                false,
+                None,
+                Some("text".to_string()),
+                None,
+                None,
+            )
+            .unwrap();
+        assert_eq!(count, results.len());
+    }
+
+    #[test]
+    fn filter_by_image_kind() {
+        let (db, tmp) = setup_db();
+        let img_path = tmp.path().join("test.png");
+        std::fs::write(&img_path, b"img").unwrap();
+
+        db.insert_item(&text_item("hello"), 100).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        db.insert_item(&image_item(img_path.to_str().unwrap()), 100)
+            .unwrap();
+
+        let results = db
+            .get_history(
+                1,
+                50,
+                None,
+                false,
+                false,
+                None,
+                Some("image".to_string()),
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].kind, "image");
+
+        let count = db
+            .count_history_filtered(
+                None,
+                false,
+                false,
+                None,
+                Some("image".to_string()),
+                None,
+                None,
+            )
+            .unwrap();
+        assert_eq!(count, results.len());
+    }
+
+    #[test]
+    fn filter_by_sensitive() {
+        let (db, _tmp) = setup_db();
+        db.insert_item(&text_item("normal"), 100).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        db.insert_item(&sensitive_item("secret"), 100).unwrap();
+
+        let results = db
+            .get_history(
+                1,
+                50,
+                None,
+                false,
+                false,
+                None,
+                Some("sensitive".to_string()),
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+        assert_eq!(results.len(), 1);
+        assert!(results[0].is_sensitive);
+
+        let count = db
+            .count_history_filtered(
+                None,
+                false,
+                false,
+                None,
+                Some("sensitive".to_string()),
+                None,
+                None,
+            )
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn filter_by_data_type_url() {
+        let (db, _tmp) = setup_db();
+        db.insert_item(&text_item("plain text"), 100).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        db.insert_item(&typed_item("https://example.com", "url"), 100)
+            .unwrap();
+
+        let results = db
+            .get_history(
+                1,
+                50,
+                None,
+                false,
+                false,
+                None,
+                Some("url".to_string()),
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].data_type, "url");
+
+        let count = db
+            .count_history_filtered(
+                None,
+                false,
+                false,
+                None,
+                Some("url".to_string()),
+                None,
+                None,
+            )
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn filter_all_returns_everything() {
+        let (db, _tmp) = setup_db();
+        db.insert_item(&text_item("a"), 100).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        db.insert_item(&typed_item("b@c.com", "email"), 100)
+            .unwrap();
+
+        let results = db
+            .get_history(
+                1,
+                50,
+                None,
+                false,
+                false,
+                None,
+                Some("all".to_string()),
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+        assert_eq!(results.len(), 2);
+
+        let count = db
+            .count_history_filtered(
+                None,
+                false,
+                false,
+                None,
+                Some("all".to_string()),
+                None,
+                None,
+            )
+            .unwrap();
+        assert_eq!(count, 2);
+    }
+
+    #[test]
+    fn count_matches_list_with_no_filter() {
+        let (db, _tmp) = setup_db();
+        for i in 0..5 {
+            db.insert_item(&text_item(&format!("item-{}", i)), 100)
+                .unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+
+        let results = db
+            .get_history(1, 50, None, false, false, None, None, None, None, None)
+            .unwrap();
+        let count = db
+            .count_history_filtered(None, false, false, None, None, None, None)
+            .unwrap();
+        assert_eq!(results.len(), count);
+    }
+
+    // -------------------------------------------------------
+    // 3.2  Collection + search + type combinations
+    // -------------------------------------------------------
+
+    #[test]
+    fn filter_collection_plus_type() {
+        let (db, tmp) = setup_db();
+        let coll = db.create_collection("test".to_string()).unwrap();
+
+        let img_path = tmp.path().join("coll.png");
+        std::fs::write(&img_path, b"img").unwrap();
+
+        db.insert_item(&text_item("text-in-coll"), 100).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        db.insert_item(&image_item(img_path.to_str().unwrap()), 100)
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        db.insert_item(&text_item("text-not-in-coll"), 100).unwrap();
+
+        // Put first two items in collection
+        db.set_item_collection(1, Some(coll.id)).unwrap();
+        db.set_item_collection(2, Some(coll.id)).unwrap();
+
+        // Collection only → 2 items
+        let results = db
+            .get_history(
+                1,
+                50,
+                None,
+                false,
+                false,
+                Some(coll.id),
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+        assert_eq!(results.len(), 2);
+
+        // Collection + text filter → 1 item (only the text item in coll)
+        let results = db
+            .get_history(
+                1,
+                50,
+                None,
+                false,
+                false,
+                Some(coll.id),
+                Some("text".to_string()),
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].content, "text-in-coll");
+
+        // Count matches
+        let count = db
+            .count_history_filtered(
+                None,
+                false,
+                false,
+                Some(coll.id),
+                Some("text".to_string()),
+                None,
+                None,
+            )
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn filter_search_plus_type() {
+        let (db, _tmp) = setup_db();
+        db.insert_item(&text_item("hello world"), 100).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        db.insert_item(&typed_item("hello@example.com", "email"), 100)
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        db.insert_item(&text_item("goodbye"), 100).unwrap();
+
+        // Search "hello" → 2 results
+        let results = db
+            .get_history(
+                1,
+                50,
+                Some("hello".to_string()),
+                false,
+                false,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+        assert_eq!(results.len(), 2);
+
+        // Search "hello" + email filter → 1 result
+        let results = db
+            .get_history(
+                1,
+                50,
+                Some("hello".to_string()),
+                false,
+                false,
+                None,
+                Some("email".to_string()),
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].data_type, "email");
+
+        let count = db
+            .count_history_filtered(
+                Some("hello".to_string()),
+                false,
+                false,
+                None,
+                Some("email".to_string()),
+                None,
+                None,
+            )
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn filter_collection_plus_search_plus_type() {
+        let (db, _tmp) = setup_db();
+        let coll = db.create_collection("combo".to_string()).unwrap();
+
+        db.insert_item(&typed_item("https://example.com", "url"), 100)
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        db.insert_item(&typed_item("https://other.com", "url"), 100)
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        db.insert_item(&text_item("example text"), 100).unwrap();
+
+        db.set_item_collection(1, Some(coll.id)).unwrap();
+        db.set_item_collection(3, Some(coll.id)).unwrap();
+
+        // collection + search "example" + url filter → 1 (only item 1)
+        let results = db
+            .get_history(
+                1,
+                50,
+                Some("example".to_string()),
+                false,
+                false,
+                Some(coll.id),
+                Some("url".to_string()),
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+        assert_eq!(results.len(), 1);
+        assert!(results[0].content.contains("example.com"));
+
+        let count = db
+            .count_history_filtered(
+                Some("example".to_string()),
+                false,
+                false,
+                Some(coll.id),
+                Some("url".to_string()),
+                None,
+                None,
+            )
+            .unwrap();
+        assert_eq!(count, 1);
     }
 }

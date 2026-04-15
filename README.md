@@ -65,6 +65,15 @@ Your clipboard history and settings are stored locally in:
 - **macOS**: `~/.clipboard-manager/`
 - **Windows/Linux**: `~/.clipboard-manager/` (or standard AppData location)
 
+```
+~/.clipboard-manager/
+├── config.json      # User settings
+├── history.db       # Encrypted clipboard history (AES-GCM)
+├── secret.key       # Encryption key
+├── images/          # Clipboard image history
+└── captures/        # Saved screenshots
+```
+
 > **Note**: The database is encrypted using AES-GCM for security.
 
 ## 🛠️ Tech Stack

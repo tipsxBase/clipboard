@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, watch } from "vue";
-import { listen } from "@tauri-apps/api/event";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useI18n } from "vue-i18n";
+import { onMounted, onUnmounted, ref, watch } from 'vue';
+import { listen } from '@tauri-apps/api/event';
+import { getCurrentWindow } from '@tauri-apps/api/window';
+import { useI18n } from 'vue-i18n';
 import {
   Search,
   FileText,
@@ -28,15 +28,19 @@ import {
   FileSpreadsheet,
   FileImage,
   FileCode,
-} from "lucide-vue-next";
-import DOMPurify from "dompurify";
-import Button from "@/components/ui/button/Button.vue";
-import Input from "@/components/ui/input/Input.vue";
-import LocalImage from "@/components/LocalImage.vue";
-import { useClipboard } from "@/composables/useClipboard";
-import { useSettings } from "@/composables/useSettings";
-import { useToast } from "@/composables/useToast";
-import { useTimeAgo } from "@/composables/useTimeAgo";
+  Clock,
+  ArrowUpDown,
+  Scissors,
+} from 'lucide-vue-next';
+import DOMPurify from 'dompurify';
+import Button from '@/components/ui/button/Button.vue';
+import Input from '@/components/ui/input/Input.vue';
+import LocalImage from '@/components/LocalImage.vue';
+import QuickActionMenu from '@/components/QuickActionMenu.vue';
+import { useClipboard } from '@/composables/useClipboard';
+import { useSettings } from '@/composables/useSettings';
+import { useToast } from '@/composables/useToast';
+import { useTimeAgo } from '@/composables/useTimeAgo';
 
 const { t } = useI18n();
 const { toastMessage } = useToast();
@@ -53,6 +57,7 @@ const {
   deleteItem,
   toggleSensitive,
   togglePin,
+  toggleSnippet,
   scrollToSelected,
   setupClipboardListeners,
   selectedIds,
@@ -62,14 +67,33 @@ const {
   collections,
   activeCollectionId,
   loadCollections,
+  timeRange,
+  sortMode,
 } = useClipboard();
+
+import { invoke } from '@tauri-apps/api/core';
+import type { ClipboardItem } from '@/types';
 
 const { config, loadConfig, setupConfigListeners } = useSettings();
 const isSelectingCollection = ref(false);
 const showHtml = ref(false);
+const linkedScreenshot = ref<ClipboardItem | null>(null);
 
-watch(previewItem, (newItem) => {
+watch(previewItem, async (newItem) => {
   showHtml.value = !!newItem?.html_content;
+  // Fetch linked source screenshot for OCR text items
+  if (newItem?.screenshot_id) {
+    try {
+      const item = await invoke<ClipboardItem | null>('get_item_by_id', {
+        id: newItem.screenshot_id,
+      });
+      linkedScreenshot.value = item ?? null;
+    } catch {
+      linkedScreenshot.value = null;
+    }
+  } else {
+    linkedScreenshot.value = null;
+  }
 });
 
 const getCollectionName = (id?: number) => {
@@ -86,62 +110,47 @@ function getFilesList(content: string): string[] {
 }
 
 function getFileIcon(path: string) {
-  const ext = path.split(".").pop()?.toLowerCase();
+  const ext = path.split('.').pop()?.toLowerCase();
   if (!ext) return Files;
 
-  if (
-    ["png", "jpg", "jpeg", "gif", "bmp", "webp", "svg", "ico"].includes(ext)
-  ) {
+  if (['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'svg', 'ico'].includes(ext)) {
     return FileImage;
   }
-  if (["mp3", "wav", "ogg", "m4a", "flac", "aac"].includes(ext)) {
+  if (['mp3', 'wav', 'ogg', 'm4a', 'flac', 'aac'].includes(ext)) {
     return FileAudio;
   }
-  if (["mp4", "mkv", "avi", "mov", "webm", "wmv"].includes(ext)) {
+  if (['mp4', 'mkv', 'avi', 'mov', 'webm', 'wmv'].includes(ext)) {
     return FileVideo;
   }
-  if (["zip", "rar", "7z", "tar", "gz", "bz2", "xz"].includes(ext)) {
+  if (['zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz'].includes(ext)) {
     return FileArchive;
   }
-  if (["xls", "xlsx", "csv", "numbers"].includes(ext)) {
+  if (['xls', 'xlsx', 'csv', 'numbers'].includes(ext)) {
     return FileSpreadsheet;
   }
   if (
-    [
-      "js",
-      "ts",
-      "jsx",
-      "tsx",
-      "json",
-      "html",
-      "css",
-      "py",
-      "rs",
-      "java",
-      "c",
-      "cpp",
-    ].includes(ext)
+    ['js', 'ts', 'jsx', 'tsx', 'json', 'html', 'css', 'py', 'rs', 'java', 'c', 'cpp'].includes(ext)
   ) {
     return FileCode;
   }
-  if (["doc", "docx", "pdf", "txt", "rtf", "md"].includes(ext)) {
+  if (['doc', 'docx', 'pdf', 'txt', 'rtf', 'md'].includes(ext)) {
     return FileText;
   }
   return Files;
 }
 
 function getItemIcon(item: any) {
-  if (item.kind === "image") return ImageIcon;
-  if (item.kind === "file") return Files;
+  if (item.kind === 'image') return ImageIcon;
+  if (item.kind === 'file') return Files;
 
   switch (item.data_type) {
-    case "url":
+    case 'url':
       return Globe;
-    case "email":
+    case 'email':
       return Mail;
-    case "code":
+    case 'code':
       return Code;
-    case "phone":
+    case 'phone':
       return Phone;
     default:
       return FileText;
@@ -158,10 +167,10 @@ function handleItemClick(item: any, e: MouseEvent) {
 
 function handleKeydown(e: KeyboardEvent) {
   const len = filteredHistory.value.length;
-  if (len === 0 && e.key !== "Escape") return;
+  if (len === 0 && e.key !== 'Escape') return;
 
   // Number keys 1-9 for quick paste
-  if (e.key >= "1" && e.key <= "9") {
+  if (e.key >= '1' && e.key <= '9') {
     const index = parseInt(e.key) - 1;
     if (index < len) {
       e.preventDefault();
@@ -171,42 +180,34 @@ function handleKeydown(e: KeyboardEvent) {
   }
 
   // Vim navigation
-  if (
-    (e.ctrlKey && e.key === "n") ||
-    e.key === "ArrowDown" ||
-    (e.ctrlKey && e.key === "j")
-  ) {
+  if ((e.ctrlKey && e.key === 'n') || e.key === 'ArrowDown' || (e.ctrlKey && e.key === 'j')) {
     e.preventDefault();
     selectedIndex.value = (selectedIndex.value + 1) % len;
     scrollToSelected();
-  } else if (
-    (e.ctrlKey && e.key === "p") ||
-    e.key === "ArrowUp" ||
-    (e.ctrlKey && e.key === "k")
-  ) {
+  } else if ((e.ctrlKey && e.key === 'p') || e.key === 'ArrowUp' || (e.ctrlKey && e.key === 'k')) {
     e.preventDefault();
     selectedIndex.value = (selectedIndex.value - 1 + len) % len;
     scrollToSelected();
-  } else if (e.key === "Enter") {
+  } else if (e.key === 'Enter') {
     e.preventDefault();
     if (selectedIds.value.length > 0) {
       pasteStack();
     } else if (filteredHistory.value[selectedIndex.value]) {
       pasteItem(filteredHistory.value[selectedIndex.value]);
     }
-  } else if (e.key === "x") {
+  } else if (e.key === 'x') {
     e.preventDefault();
     if (filteredHistory.value[selectedIndex.value]) {
       toggleSelection(filteredHistory.value[selectedIndex.value]);
     }
-  } else if (e.key === " ") {
+  } else if (e.key === ' ') {
     e.preventDefault();
     if (previewItem.value) {
       previewItem.value = null;
     } else if (filteredHistory.value[selectedIndex.value]) {
       previewItem.value = filteredHistory.value[selectedIndex.value];
     }
-  } else if (e.key === "Escape") {
+  } else if (e.key === 'Escape') {
     if (previewItem.value) {
       previewItem.value = null;
     } else {
@@ -221,17 +222,17 @@ onMounted(async () => {
   await loadHistory(true);
   await setupClipboardListeners();
   await setupConfigListeners();
-  window.addEventListener("keydown", handleKeydown);
+  window.addEventListener('keydown', handleKeydown);
 
   // Focus search on show
-  await listen("tauri://focus", () => {
+  await listen('tauri://focus', () => {
     loadCollections();
     loadHistory(true);
   });
 });
 
 onUnmounted(() => {
-  window.removeEventListener("keydown", handleKeydown);
+  window.removeEventListener('keydown', handleKeydown);
 });
 </script>
 
@@ -240,9 +241,7 @@ onUnmounted(() => {
     class="h-screen w-screen bg-background/60 text-foreground flex flex-col overflow-hidden select-none"
   >
     <!-- Header -->
-    <div
-      class="border-b border-border bg-card/40 backdrop-blur-md p-2 flex gap-2 items-center"
-    >
+    <div class="border-b border-border bg-card/40 backdrop-blur-md p-2 flex gap-2 items-center">
       <!-- Search Bar -->
       <div class="relative flex-1">
         <Search
@@ -263,13 +262,43 @@ onUnmounted(() => {
         variant="ghost"
         class="h-7 w-7 shrink-0"
         :class="{
-          'bg-accent text-accent-foreground':
-            isSelectingCollection || activeCollectionId,
+          'bg-accent text-accent-foreground': isSelectingCollection || activeCollectionId,
         }"
         @click="isSelectingCollection = !isSelectingCollection"
         :title="t('collections.collections')"
       >
         <Folder class="w-4 h-4" />
+      </Button>
+    </div>
+
+    <!-- Quick Filters -->
+    <div
+      class="border-b border-border bg-card/20 px-2 py-1 flex items-center gap-1 overflow-x-auto no-scrollbar"
+    >
+      <Button
+        v-for="range in [
+          { value: null, label: t('timeRange.all') },
+          { value: 'today', label: t('timeRange.today') },
+          { value: 'week', label: t('timeRange.week') },
+        ]"
+        :key="range.value ?? 'all'"
+        @click="timeRange = range.value"
+        size="sm"
+        :variant="timeRange === range.value ? 'default' : 'ghost'"
+        class="h-5 text-[9px] uppercase font-bold tracking-wider rounded-full px-2 shrink-0"
+      >
+        <Clock class="w-2.5 h-2.5 mr-0.5" v-if="range.value" />
+        {{ range.label }}
+      </Button>
+      <div class="flex-1" />
+      <Button
+        @click="sortMode = sortMode === 'oldest' ? null : 'oldest'"
+        size="sm"
+        :variant="sortMode === 'oldest' ? 'default' : 'ghost'"
+        class="h-5 text-[9px] uppercase font-bold tracking-wider rounded-full px-2 shrink-0"
+      >
+        <ArrowUpDown class="w-2.5 h-2.5 mr-0.5" />
+        {{ t('sort.oldest') }}
       </Button>
     </div>
 
@@ -287,7 +316,7 @@ onUnmounted(() => {
           "
         >
           <Folder class="w-4 h-4 text-muted-foreground" />
-          <span class="text-sm font-medium">{{ t("filters.all") }}</span>
+          <span class="text-sm font-medium">{{ t('filters.all') }}</span>
         </div>
         <div
           v-for="collection in collections"
@@ -311,12 +340,8 @@ onUnmounted(() => {
           :key="item.timestamp"
           class="group relative rounded-lg border border-transparent hover:bg-accent/50 hover:border-border transition-all cursor-pointer"
           :class="[
-            index === selectedIndex
-              ? 'bg-accent border-primary/20 selected-item'
-              : '',
-            item.id && selectedIds.includes(item.id)
-              ? 'border-primary bg-accent/30'
-              : '',
+            index === selectedIndex ? 'bg-accent border-primary/20 selected-item' : '',
+            item.id && selectedIds.includes(item.id) ? 'border-primary bg-accent/30' : '',
             config.compact_mode ? 'p-1.5' : 'p-2',
           ]"
           @click="handleItemClick(item, $event)"
@@ -331,15 +356,10 @@ onUnmounted(() => {
           </div>
 
           <!-- Content -->
-          <div
-            class="flex gap-3"
-            :class="config.compact_mode ? 'items-center' : 'items-start'"
-          >
+          <div class="flex gap-3" :class="config.compact_mode ? 'items-center' : 'items-start'">
             <div
               class="rounded-md bg-muted text-muted-foreground shrink-0 relative flex items-center justify-center"
-              :class="
-                config.compact_mode ? 'w-6 h-6 p-1' : 'w-7 h-7 mt-0.5 p-1.5'
-              "
+              :class="config.compact_mode ? 'w-6 h-6 p-1' : 'w-7 h-7 mt-0.5 p-1.5'"
             >
               <component
                 :is="getItemIcon(item)"
@@ -353,15 +373,11 @@ onUnmounted(() => {
               </div>
             </div>
             <div class="flex-1 min-w-0">
-              <div
-                v-if="!config.compact_mode"
-                class="flex justify-between items-baseline mb-0.5"
-              >
+              <div v-if="!config.compact_mode" class="flex justify-between items-baseline mb-0.5">
                 <div class="flex items-center gap-2">
-                  <span
-                    class="text-[10px] font-mono text-muted-foreground opacity-70"
-                    >{{ formatTimeAgo(item.timestamp) }}</span
-                  >
+                  <span class="text-[10px] font-mono text-muted-foreground opacity-70">{{
+                    formatTimeAgo(item.timestamp)
+                  }}</span>
                   <div
                     v-if="getCollectionName(item.collection_id)"
                     class="flex items-center gap-1 bg-primary/10 text-primary px-1.5 py-0.5 rounded text-[10px]"
@@ -384,8 +400,7 @@ onUnmounted(() => {
                     v-if="item.kind === 'text'"
                     class="text-xs text-foreground line-clamp-1 break-all font-medium flex-1"
                     :class="{
-                      'blur-sm group-hover:blur-none transition-all':
-                        item.is_sensitive,
+                      'blur-sm group-hover:blur-none transition-all': item.is_sensitive,
                       'text-muted-foreground opacity-80': !!item.note,
                     }"
                   >
@@ -399,9 +414,7 @@ onUnmounted(() => {
                     {{ getFilesList(item.content)[0] }}
                   </p>
                   <div v-else class="flex items-center gap-2 flex-1">
-                    <span class="text-xs text-muted-foreground italic"
-                      >[Image]</span
-                    >
+                    <span class="text-xs text-muted-foreground italic">[Image]</span>
                   </div>
                 </div>
 
@@ -413,34 +426,26 @@ onUnmounted(() => {
                   <Folder class="w-3 h-3" />
                 </div>
 
-                <span
-                  class="text-[9px] font-mono text-muted-foreground opacity-50 shrink-0"
-                  >{{ formatTimeAgo(item.timestamp) }}</span
-                >
+                <span class="text-[9px] font-mono text-muted-foreground opacity-50 shrink-0">{{
+                  formatTimeAgo(item.timestamp)
+                }}</span>
               </div>
 
               <template v-else>
-                <p
-                  v-if="item.note"
-                  class="text-sm font-semibold text-foreground mb-0.5"
-                >
+                <p v-if="item.note" class="text-sm font-semibold text-foreground mb-0.5">
                   {{ item.note }}
                 </p>
                 <p
                   v-if="item.kind === 'text'"
                   class="text-sm text-foreground line-clamp-2 break-all font-medium"
                   :class="{
-                    'blur-sm group-hover:blur-none transition-all':
-                      item.is_sensitive,
+                    'blur-sm group-hover:blur-none transition-all': item.is_sensitive,
                     'text-muted-foreground text-xs': !!item.note,
                   }"
                 >
                   {{ item.content }}
                 </p>
-                <div
-                  v-else-if="item.kind === 'file'"
-                  class="flex flex-col gap-1 mt-1"
-                >
+                <div v-else-if="item.kind === 'file'" class="flex flex-col gap-1 mt-1">
                   <div
                     v-for="(file, i) in getFilesList(item.content).slice(0, 3)"
                     :key="i"
@@ -477,6 +482,7 @@ onUnmounted(() => {
             class="absolute right-2 top-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-background/80 backdrop-blur-sm rounded-md p-0.5 shadow-sm border border-border z-20"
             @click.stop
           >
+            <QuickActionMenu :item="item" :on-action-done="() => loadHistory(true)" />
             <Button
               @click.stop="togglePin(index)"
               size="icon"
@@ -485,29 +491,29 @@ onUnmounted(() => {
               :class="item.is_pinned ? 'text-primary' : 'text-muted-foreground'"
               :title="item.is_pinned ? t('actions.unpin') : t('actions.pin')"
             >
-              <component
-                :is="item.is_pinned ? PinOff : Pin"
-                class="w-3.5 h-3.5"
-              />
+              <component :is="item.is_pinned ? PinOff : Pin" class="w-3.5 h-3.5" />
+            </Button>
+            <Button
+              @click.stop="item.id && toggleSnippet(item.id)"
+              size="icon"
+              variant="ghost"
+              class="h-6 w-6"
+              :class="item.is_snippet ? 'text-orange-500' : 'text-muted-foreground'"
+              :title="item.is_snippet ? t('actions.removeSnippet') : t('actions.addSnippet')"
+            >
+              <Scissors class="w-3.5 h-3.5" />
             </Button>
             <Button
               @click.stop="toggleSensitive(index)"
               size="icon"
               variant="ghost"
               class="h-6 w-6"
-              :class="
-                item.is_sensitive ? 'text-yellow-500' : 'text-muted-foreground'
-              "
+              :class="item.is_sensitive ? 'text-yellow-500' : 'text-muted-foreground'"
               :title="
-                item.is_sensitive
-                  ? t('actions.sensitiveTooltip')
-                  : t('actions.markSensitive')
+                item.is_sensitive ? t('actions.sensitiveTooltip') : t('actions.markSensitive')
               "
             >
-              <component
-                :is="item.is_sensitive ? Lock : Unlock"
-                class="w-3.5 h-3.5"
-              />
+              <component :is="item.is_sensitive ? Lock : Unlock" class="w-3.5 h-3.5" />
             </Button>
             <Button
               @click.stop="previewItem = item"
@@ -551,37 +557,32 @@ onUnmounted(() => {
           class="flex flex-col items-center justify-center h-40 text-muted-foreground"
         >
           <Command class="w-8 h-8 mb-2 opacity-20" />
-          <p class="text-sm">{{ t("emptyState.title") }}</p>
-          <p class="text-xs opacity-50 mt-1">{{ t("emptyState.subtitle") }}</p>
+          <p class="text-sm">{{ t('emptyState.title') }}</p>
+          <p class="text-xs opacity-50 mt-1">{{ t('emptyState.subtitle') }}</p>
         </div>
       </template>
     </div>
 
     <!-- Footer -->
-    <div
-      class="border-t border-border bg-card/40 backdrop-blur-md p-1.5 flex justify-end px-3"
-    >
+    <div class="border-t border-border bg-card/40 backdrop-blur-md p-1.5 flex justify-end px-3">
       <div class="flex items-center gap-3 text-[10px] text-muted-foreground">
         <div class="flex items-center gap-1">
-          <span
-            class="bg-muted px-1.5 py-0.5 rounded border border-border font-mono text-[9px]"
+          <span class="bg-muted px-1.5 py-0.5 rounded border border-border font-mono text-[9px]"
             >1-9</span
           >
-          <span>{{ t("shortcuts.paste") }}</span>
+          <span>{{ t('shortcuts.paste') }}</span>
         </div>
         <div class="flex items-center gap-1">
-          <span
-            class="bg-muted px-1.5 py-0.5 rounded border border-border font-mono text-[9px]"
+          <span class="bg-muted px-1.5 py-0.5 rounded border border-border font-mono text-[9px]"
             >Space</span
           >
-          <span>{{ t("shortcuts.preview") }}</span>
+          <span>{{ t('shortcuts.preview') }}</span>
         </div>
         <div class="flex items-center gap-1">
-          <span
-            class="bg-muted px-1.5 py-0.5 rounded border border-border font-mono text-[9px]"
+          <span class="bg-muted px-1.5 py-0.5 rounded border border-border font-mono text-[9px]"
             >x</span
           >
-          <span>{{ t("shortcuts.select") }}</span>
+          <span>{{ t('shortcuts.select') }}</span>
         </div>
       </div>
     </div>
@@ -605,23 +606,14 @@ onUnmounted(() => {
       <div
         class="bg-card rounded-xl shadow-2xl border border-border max-w-2xl w-full max-h-[80vh] flex flex-col overflow-hidden"
       >
-        <div
-          class="p-4 border-b border-border flex justify-between items-center bg-muted/30"
-        >
+        <div class="p-4 border-b border-border flex justify-between items-center bg-muted/30">
           <div class="flex items-center gap-2 text-muted-foreground">
             <FileText v-if="previewItem.kind === 'text'" class="w-4 h-4" />
             <Files v-else-if="previewItem.kind === 'file'" class="w-4 h-4" />
             <ImageIcon v-else class="w-4 h-4" />
-            <span class="text-sm font-medium">{{
-              formatTimeAgo(previewItem.timestamp)
-            }}</span>
+            <span class="text-sm font-medium">{{ formatTimeAgo(previewItem.timestamp) }}</span>
           </div>
-          <Button
-            @click="previewItem = null"
-            size="icon"
-            variant="ghost"
-            class="h-8 w-8"
-          >
+          <Button @click="previewItem = null" size="icon" variant="ghost" class="h-8 w-8">
             <X class="w-5 h-5" />
           </Button>
         </div>
@@ -635,7 +627,7 @@ onUnmounted(() => {
                 @click="showHtml = !showHtml"
               >
                 <component :is="showHtml ? FileText : Code" class="w-3 h-3" />
-                {{ showHtml ? "Text" : "HTML" }}
+                {{ showHtml ? 'Text' : 'HTML' }}
               </Button>
             </div>
             <div
@@ -651,16 +643,23 @@ onUnmounted(() => {
                 "
               ></div>
             </div>
-            <pre
-              v-else
-              class="font-mono text-sm text-foreground whitespace-pre-wrap break-all"
-              >{{ previewContent || previewItem.content }}</pre
-            >
+            <pre v-else class="font-mono text-sm text-foreground whitespace-pre-wrap break-all">{{
+              previewContent || previewItem.content
+            }}</pre>
+            <!-- Linked source screenshot for OCR text -->
+            <div v-if="linkedScreenshot" class="mt-3 pt-3 border-t border-border">
+              <p class="text-xs text-muted-foreground mb-2 flex items-center gap-1">
+                <ImageIcon class="w-3 h-3" />
+                {{ t('preview.sourceScreenshot') }}
+              </p>
+              <LocalImage
+                :src="linkedScreenshot.content"
+                class="max-w-full max-h-40 rounded-md shadow-sm cursor-pointer hover:opacity-80 transition-opacity"
+                @click="previewItem = linkedScreenshot"
+              />
+            </div>
           </div>
-          <div
-            v-else-if="previewItem.kind === 'file'"
-            class="flex flex-col gap-2"
-          >
+          <div v-else-if="previewItem.kind === 'file'" class="flex flex-col gap-2">
             <h3 class="font-medium text-sm text-muted-foreground">
               {{ getFilesList(previewItem.content).length }} Files
             </h3>
@@ -670,31 +669,23 @@ onUnmounted(() => {
                 :key="i"
                 class="flex items-center gap-2 p-2 bg-muted/50 rounded text-sm break-all font-mono"
               >
-                <component
-                  :is="getFileIcon(file)"
-                  class="shrink-0 w-5 h-5 text-muted-foreground"
-                />
+                <component :is="getFileIcon(file)" class="shrink-0 w-5 h-5 text-muted-foreground" />
                 {{ file }}
               </div>
             </div>
           </div>
           <div v-else class="flex justify-center">
-            <LocalImage
-              :src="previewItem.content"
-              class="max-w-full rounded-lg shadow-lg"
-            />
+            <LocalImage :src="previewItem.content" class="max-w-full rounded-lg shadow-lg" />
           </div>
         </div>
-        <div
-          class="p-3 border-t border-border bg-muted/30 flex justify-end gap-2"
-        >
+        <div class="p-3 border-t border-border bg-muted/30 flex justify-end gap-2">
           <Button
             v-if="previewItem.kind === 'image'"
             @click="ocrImage(previewItem!)"
             variant="secondary"
             class="gap-2"
           >
-            <ScanText class="w-4 h-4" /> {{ t("actions.ocr") }}
+            <ScanText class="w-4 h-4" /> {{ t('actions.ocr') }}
           </Button>
           <Button
             @click="
@@ -703,7 +694,7 @@ onUnmounted(() => {
             "
             class="gap-2"
           >
-            <CornerDownLeft class="w-4 h-4" /> {{ t("actions.paste") }}
+            <CornerDownLeft class="w-4 h-4" /> {{ t('actions.paste') }}
           </Button>
         </div>
       </div>

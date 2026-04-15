@@ -1,11 +1,11 @@
-import { ref, computed, onUnmounted } from "vue";
+/**
+ * @deprecated NON-MAINLINE — This composable is superseded by useFabricCanvas.ts.
+ * Do NOT extend or use in new code. The maintained screenshot mainline is
+ * ScreenshotWindow.vue + useFabricCanvas.ts.
+ */
+import { ref, computed, onUnmounted } from 'vue';
 
-export function useScreenshotCanvas(
-  drawCanvas: any,
-  drawCtx: any,
-  imgCtx: any,
-  screenConfig: any,
-) {
+export function useScreenshotCanvas(drawCanvas: any, drawCtx: any, imgCtx: any, screenConfig: any) {
   const drawConfig = ref({
     startX: 0,
     startY: 0,
@@ -14,39 +14,36 @@ export function useScreenshotCanvas(
     scaleX: 1,
     scaleY: 1,
     lineWidth: 2, // 线宽
-    color: "red", // 颜色
+    color: 'red', // 颜色
     isDrawing: false, // 正在绘制
     brushSize: 10, // 马赛克大小
     actions: [], // 存储绘制动作
     undoStack: [],
   });
 
-  const currentTool = ref("");
+  const currentTool = ref('');
   // 标记当前一次绘制过程中是否实际产生了绘制
   const hasDrawn = ref(false);
   // 是否可以撤回（当存在已保存的绘制动作时）
   const canUndo = computed(() => drawConfig.value.actions.length > 0);
 
   const startListen = () => {
-    drawCanvas.value.addEventListener("mousedown", handleMouseDown);
-    drawCanvas.value.addEventListener("mousemove", handleMouseMove);
-    document.addEventListener("mouseup", handleMouseUp);
+    drawCanvas.value.addEventListener('mousedown', handleMouseDown);
+    drawCanvas.value.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
   };
 
   const closeListen = () => {
-    drawCanvas.value?.removeEventListener("mousedown", handleMouseDown);
-    drawCanvas.value?.removeEventListener("mousemove", handleMouseMove);
-    document.removeEventListener("mouseup", handleMouseUp);
+    drawCanvas.value?.removeEventListener('mousedown', handleMouseDown);
+    drawCanvas.value?.removeEventListener('mousemove', handleMouseMove);
+    document.removeEventListener('mouseup', handleMouseUp);
   };
 
   const draw = (type: string) => {
-    const { clientWidth: containerWidth, clientHeight: containerHeight } =
-      drawCanvas.value;
+    const { clientWidth: containerWidth, clientHeight: containerHeight } = drawCanvas.value;
     // Assuming screen is global, or use window
-    drawConfig.value.scaleX =
-      (window.screen.width * window.devicePixelRatio) / containerWidth;
-    drawConfig.value.scaleY =
-      (window.screen.height * window.devicePixelRatio) / containerHeight;
+    drawConfig.value.scaleX = (window.screen.width * window.devicePixelRatio) / containerWidth;
+    drawConfig.value.scaleY = (window.screen.height * window.devicePixelRatio) / containerHeight;
     currentTool.value = type;
     startListen();
   };
@@ -63,11 +60,11 @@ export function useScreenshotCanvas(
     // 限制起点坐标在框选矩形区域内
     drawConfig.value.startX = Math.min(
       Math.max(offsetX * drawConfig.value.scaleX, screenConfig.value.startX),
-      screenConfig.value.endX,
+      screenConfig.value.endX
     );
     drawConfig.value.startY = Math.min(
       Math.max(offsetY * drawConfig.value.scaleY, screenConfig.value.startY),
-      screenConfig.value.endY,
+      screenConfig.value.endY
     );
   };
 
@@ -78,32 +75,26 @@ export function useScreenshotCanvas(
     // 限制绘制区域在框选矩形区域内
     let limitedX = Math.min(
       Math.max(offsetX * drawConfig.value.scaleX, screenConfig.value.startX),
-      screenConfig.value.endX,
+      screenConfig.value.endX
     );
     let limitedY = Math.min(
       Math.max(offsetY * drawConfig.value.scaleY, screenConfig.value.startY),
-      screenConfig.value.endY,
+      screenConfig.value.endY
     );
 
     // 对于马赛克工具，需要考虑边框宽度和画笔半径偏移，避免涂抹到选区边框
-    if (currentTool.value === "mosaic") {
+    if (currentTool.value === 'mosaic') {
       const borderWidth = 2;
       const halfBrushSize = drawConfig.value.brushSize / 2;
       const safeMargin = borderWidth + halfBrushSize;
 
       limitedX = Math.min(
-        Math.max(
-          offsetX * drawConfig.value.scaleX,
-          screenConfig.value.startX + safeMargin,
-        ),
-        screenConfig.value.endX - safeMargin,
+        Math.max(offsetX * drawConfig.value.scaleX, screenConfig.value.startX + safeMargin),
+        screenConfig.value.endX - safeMargin
       );
       limitedY = Math.min(
-        Math.max(
-          offsetY * drawConfig.value.scaleY,
-          screenConfig.value.startY + safeMargin,
-        ),
-        screenConfig.value.endY - safeMargin,
+        Math.max(offsetY * drawConfig.value.scaleY, screenConfig.value.startY + safeMargin),
+        screenConfig.value.endY - safeMargin
       );
     }
 
@@ -111,13 +102,8 @@ export function useScreenshotCanvas(
     drawConfig.value.endY = limitedY;
 
     // 清除非马赛克的情况下重新绘制
-    if (currentTool.value !== "mosaic") {
-      drawCtx.value.clearRect(
-        0,
-        0,
-        drawCanvas.value.width,
-        drawCanvas.value.height,
-      );
+    if (currentTool.value !== 'mosaic') {
+      drawCtx.value.clearRect(0, 0, drawCanvas.value.width, drawCanvas.value.height);
       drawConfig.value.actions.forEach((action: any) => {
         drawCtx.value.putImageData(action, 0, 0);
       });
@@ -130,37 +116,32 @@ export function useScreenshotCanvas(
     const height = Math.abs(drawConfig.value.startY - drawConfig.value.endY);
 
     switch (currentTool.value) {
-      case "rect":
+      case 'rect':
         drawRectangle(drawCtx.value, x, y, width, height);
         hasDrawn.value = true;
         break;
-      case "circle":
+      case 'circle':
         drawCircle(
           drawCtx.value,
           drawConfig.value.startX,
           drawConfig.value.startY,
           drawConfig.value.endX,
-          drawConfig.value.endY,
+          drawConfig.value.endY
         );
         hasDrawn.value = true;
         break;
-      case "arrow":
+      case 'arrow':
         drawArrow(
           drawCtx.value,
           drawConfig.value.startX,
           drawConfig.value.startY,
           drawConfig.value.endX,
-          drawConfig.value.endY,
+          drawConfig.value.endY
         );
         hasDrawn.value = true;
         break;
-      case "mosaic":
-        drawMosaic(
-          drawCtx.value,
-          limitedX,
-          limitedY,
-          drawConfig.value.brushSize,
-        );
+      case 'mosaic':
+        drawMosaic(drawCtx.value, limitedX, limitedY, drawConfig.value.brushSize);
         hasDrawn.value = true;
         break;
       default:
@@ -182,39 +163,27 @@ export function useScreenshotCanvas(
       0,
       0,
       drawCanvas.value.width,
-      drawCanvas.value.height,
+      drawCanvas.value.height
     );
 
     saveAction();
   };
 
-  const drawRectangle = (
-    context: any,
-    x: any,
-    y: any,
-    width: any,
-    height: any,
-  ) => {
+  const drawRectangle = (context: any, x: any, y: any, width: any, height: any) => {
     context.strokeStyle = drawConfig.value.color;
     context.lineWidth = drawConfig.value.lineWidth;
     context.strokeRect(x, y, width, height);
   };
 
-  const drawCircle = (
-    context: any,
-    startX: any,
-    startY: any,
-    endX: any,
-    endY: any,
-  ) => {
+  const drawCircle = (context: any, startX: any, startY: any, endX: any, endY: any) => {
     // 限制圆形的绘制范围在框选矩形区域内
     const limitedEndX = Math.min(
       Math.max(endX, screenConfig.value.startX),
-      screenConfig.value.endX,
+      screenConfig.value.endX
     );
     const limitedEndY = Math.min(
       Math.max(endY, screenConfig.value.startY),
-      screenConfig.value.endY,
+      screenConfig.value.endY
     );
 
     // 计算半径，保证半径不会超过限定矩形的边界
@@ -224,19 +193,16 @@ export function useScreenshotCanvas(
     // 检查圆形是否会超出矩形区域的边界
     const maxRadiusX = Math.min(
       startX - screenConfig.value.startX,
-      screenConfig.value.endX - startX,
+      screenConfig.value.endX - startX
     );
     const maxRadiusY = Math.min(
       startY - screenConfig.value.startY,
-      screenConfig.value.endY - startY,
+      screenConfig.value.endY - startY
     );
     const maxRadius = Math.min(maxRadiusX, maxRadiusY);
 
     // 使用 min 函数确保半径不会超过限定范围
-    const radius = Math.min(
-      Math.sqrt(deltaX * deltaX + deltaY * deltaY),
-      maxRadius,
-    );
+    const radius = Math.min(Math.sqrt(deltaX * deltaX + deltaY * deltaY), maxRadius);
 
     // 绘制圆形
     context.strokeStyle = drawConfig.value.color;
@@ -246,13 +212,7 @@ export function useScreenshotCanvas(
     context.stroke();
   };
 
-  const drawArrow = (
-    context: any,
-    fromX: any,
-    fromY: any,
-    toX: any,
-    toY: any,
-  ) => {
+  const drawArrow = (context: any, fromX: any, fromY: any, toX: any, toY: any) => {
     const headLength = 15; // 箭头的长度
     const angle = Math.atan2(toY - fromY, toX - fromX); // 算出箭头的角度
 
@@ -270,11 +230,11 @@ export function useScreenshotCanvas(
     context.moveTo(toX, toY);
     context.lineTo(
       toX - headLength * Math.cos(angle - Math.PI / 6),
-      toY - headLength * Math.sin(angle - Math.PI / 6),
+      toY - headLength * Math.sin(angle - Math.PI / 6)
     );
     context.lineTo(
       toX - headLength * Math.cos(angle + Math.PI / 6),
-      toY - headLength * Math.sin(angle + Math.PI / 6),
+      toY - headLength * Math.sin(angle + Math.PI / 6)
     );
     context.closePath();
 
@@ -298,22 +258,10 @@ export function useScreenshotCanvas(
     const safeMargin = borderWidth + halfSize;
 
     // 计算实际绘制区域，确保完全在选区内容区域内
-    const drawX = Math.max(
-      x - halfSize,
-      screenConfig.value.startX + safeMargin,
-    );
-    const drawY = Math.max(
-      y - halfSize,
-      screenConfig.value.startY + safeMargin,
-    );
-    const maxDrawX = Math.min(
-      x + halfSize,
-      screenConfig.value.endX - safeMargin,
-    );
-    const maxDrawY = Math.min(
-      y + halfSize,
-      screenConfig.value.endY - safeMargin,
-    );
+    const drawX = Math.max(x - halfSize, screenConfig.value.startX + safeMargin);
+    const drawY = Math.max(y - halfSize, screenConfig.value.startY + safeMargin);
+    const maxDrawX = Math.min(x + halfSize, screenConfig.value.endX - safeMargin);
+    const maxDrawY = Math.min(y + halfSize, screenConfig.value.endY - safeMargin);
 
     // 计算实际绘制尺寸
     const drawWidth = Math.max(0, maxDrawX - drawX);
@@ -321,16 +269,8 @@ export function useScreenshotCanvas(
 
     if (drawWidth > 0 && drawHeight > 0) {
       if (!imgCtx.value) return;
-      const imageData = imgCtx.value.getImageData(
-        drawX,
-        drawY,
-        drawWidth,
-        drawHeight,
-      );
-      const blurredData = blurImageData(
-        imageData,
-        Math.min(drawWidth, drawHeight),
-      );
+      const imageData = imgCtx.value.getImageData(drawX, drawY, drawWidth, drawHeight);
+      const blurredData = blurImageData(imageData, Math.min(drawWidth, drawHeight));
       context.putImageData(blurredData, drawX, drawY);
     }
   };
@@ -384,7 +324,7 @@ export function useScreenshotCanvas(
       0,
       0,
       drawCanvas.value.width,
-      drawCanvas.value.height,
+      drawCanvas.value.height
     );
     drawConfig.value.actions.push(imageData as never);
     drawConfig.value.undoStack = []; // 清空撤销堆栈
@@ -394,17 +334,12 @@ export function useScreenshotCanvas(
     closeListen();
     if (drawConfig.value.actions.length > 0) {
       drawConfig.value.undoStack.push(drawConfig.value.actions.pop() as never);
-      drawCtx.value.clearRect(
-        0,
-        0,
-        drawCanvas.value.width,
-        drawCanvas.value.height,
-      );
+      drawCtx.value.clearRect(0, 0, drawCanvas.value.width, drawCanvas.value.height);
       if (drawConfig.value.actions.length > 0) {
         drawCtx.value.putImageData(
           drawConfig.value.actions[drawConfig.value.actions.length - 1],
           0,
-          0,
+          0
         );
       }
     }
@@ -413,16 +348,11 @@ export function useScreenshotCanvas(
   const clearAll = () => {
     drawConfig.value.actions = [];
     drawConfig.value.undoStack = [];
-    drawCtx.value.clearRect(
-      0,
-      0,
-      drawCanvas.value.width,
-      drawCanvas.value.height,
-    );
+    drawCtx.value.clearRect(0, 0, drawCanvas.value.width, drawCanvas.value.height);
   };
 
   const resetState = () => {
-    currentTool.value = "";
+    currentTool.value = '';
     drawConfig.value.isDrawing = false;
   };
 

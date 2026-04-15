@@ -1,5 +1,12 @@
 # 截图工具核心模块文档
 
+> **⚠️ NON-MAINLINE — FROZEN**
+>
+> This directory contains screenshot abstractions from an earlier refactoring
+> effort. The maintained screenshot mainline is **`src/views/ScreenshotWindow.vue`
+> + `src/composables/useFabricCanvas.ts`**. Do NOT add new features or extend
+> modules in this directory. These files may be removed in a future cleanup.
+
 本目录包含截图工具的所有核心模块，提供完整的截图、标注、历史管理等功能。
 
 ## 模块概览

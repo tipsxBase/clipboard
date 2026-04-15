@@ -14,7 +14,7 @@
  * - ShapeRegistry: 图形注册表，管理所有图形类型
  */
 
-import { Circle, FabricObject } from "fabric";
+import { Circle, FabricObject } from 'fabric';
 
 // ============================================================================
 // 基础类型定义
@@ -33,7 +33,7 @@ export interface BaseShapeData {
 
 /** 矩形数据 */
 export interface RectShapeData extends BaseShapeData {
-  type: "rect";
+  type: 'rect';
   x1: number;
   y1: number;
   x2: number;
@@ -42,7 +42,7 @@ export interface RectShapeData extends BaseShapeData {
 
 /** 椭圆数据 */
 export interface EllipseShapeData extends BaseShapeData {
-  type: "ellipse";
+  type: 'ellipse';
   x1: number;
   y1: number;
   x2: number;
@@ -51,7 +51,7 @@ export interface EllipseShapeData extends BaseShapeData {
 
 /** 箭头数据 */
 export interface ArrowShapeData extends BaseShapeData {
-  type: "arrow";
+  type: 'arrow';
   x1: number;
   y1: number;
   x2: number;
@@ -60,17 +60,35 @@ export interface ArrowShapeData extends BaseShapeData {
 
 /** 自由画笔数据 */
 export interface PenShapeData extends BaseShapeData {
-  type: "pen";
+  type: 'pen';
   points: Point2D[];
 }
 
 /** 文本数据 */
 export interface TextShapeData extends BaseShapeData {
-  type: "text";
+  type: 'text';
   x: number;
   y: number;
   text: string;
   fontSize: number;
+}
+
+/** 模糊数据 */
+export interface BlurShapeData extends BaseShapeData {
+  type: 'blur';
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+}
+
+/** 马赛克数据 */
+export interface MosaicShapeData extends BaseShapeData {
+  type: 'mosaic';
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
 }
 
 /** 所有图形数据的联合类型 */
@@ -79,10 +97,12 @@ export type ShapeData =
   | EllipseShapeData
   | ArrowShapeData
   | PenShapeData
-  | TextShapeData;
+  | TextShapeData
+  | BlurShapeData
+  | MosaicShapeData;
 
 /** 图形类型 */
-export type ShapeType = "rect" | "ellipse" | "arrow" | "pen" | "text";
+export type ShapeType = 'rect' | 'ellipse' | 'arrow' | 'pen' | 'text' | 'blur' | 'mosaic';
 
 // ============================================================================
 // 控制点定义
@@ -163,6 +183,7 @@ export interface ControlCircle extends Circle {
 
 class ShapeRegistryClass {
   private handlers: Map<ShapeType, ShapeHandler> = new Map();
+  private _backgroundCanvas: HTMLCanvasElement | null = null;
 
   /** 注册图形处理器 */
   register<T extends ShapeData>(handler: ShapeHandler<T>): void {
@@ -177,6 +198,16 @@ class ShapeRegistryClass {
   /** 获取所有已注册的图形类型 */
   getTypes(): ShapeType[] {
     return Array.from(this.handlers.keys());
+  }
+
+  /** 设置背景画布（供 blur/mosaic 读取像素） */
+  setBackgroundCanvas(canvas: HTMLCanvasElement | null): void {
+    this._backgroundCanvas = canvas;
+  }
+
+  /** 获取背景画布 */
+  getBackgroundCanvas(): HTMLCanvasElement | null {
+    return this._backgroundCanvas;
   }
 }
 

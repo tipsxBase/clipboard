@@ -6,6 +6,7 @@ use tauri::{Emitter, Manager};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
 use crate::models::ClipboardItem;
+use crate::rules::RuleOutcome;
 use crate::state::AppState;
 use crate::tray::update_tray_menu;
 use crate::utils::classify_content;
@@ -108,9 +109,41 @@ impl ClipboardHandler for ClipboardMonitor {
                             collection_id: None,
                             note: None,
                             html_content: None,
+                            is_snippet: false,
+                            screenshot_id: None,
                         };
 
-                        match state.db.insert_item(&item, max_size) {
+                        // Evaluate rules
+                        let final_item = match state.rules_engine.evaluate(&item) {
+                            RuleOutcome::Ignore { rule_name } => {
+                                log::info!("Rule '{}' ignored file clipboard item", rule_name);
+                                let _ = self.app_handle.emit(
+                                    "rule-applied",
+                                    serde_json::json!({
+                                        "rule": rule_name, "action": "ignore"
+                                    }),
+                                );
+                                return CallbackResult::Next;
+                            }
+                            RuleOutcome::Modify {
+                                item: modified,
+                                applied_rules,
+                            } => {
+                                for r in &applied_rules {
+                                    log::info!("Rule '{}' modified file clipboard item", r);
+                                }
+                                let _ = self.app_handle.emit(
+                                    "rule-applied",
+                                    serde_json::json!({
+                                        "rules": applied_rules, "action": "modify"
+                                    }),
+                                );
+                                modified
+                            }
+                            RuleOutcome::Pass => item,
+                        };
+
+                        match state.db.insert_item(&final_item, max_size) {
                             Ok(pruned_items) => {
                                 for pruned in pruned_items {
                                     if pruned.kind == "image" {
@@ -171,9 +204,41 @@ impl ClipboardHandler for ClipboardMonitor {
                         collection_id: None,
                         note: None,
                         html_content,
+                        is_snippet: false,
+                        screenshot_id: None,
                     };
 
-                    match state.db.insert_item(&item, max_size) {
+                    // Evaluate rules
+                    let final_item = match state.rules_engine.evaluate(&item) {
+                        RuleOutcome::Ignore { rule_name } => {
+                            log::info!("Rule '{}' ignored text clipboard item", rule_name);
+                            let _ = self.app_handle.emit(
+                                "rule-applied",
+                                serde_json::json!({
+                                    "rule": rule_name, "action": "ignore"
+                                }),
+                            );
+                            return CallbackResult::Next;
+                        }
+                        RuleOutcome::Modify {
+                            item: modified,
+                            applied_rules,
+                        } => {
+                            for r in &applied_rules {
+                                log::info!("Rule '{}' modified text clipboard item", r);
+                            }
+                            let _ = self.app_handle.emit(
+                                "rule-applied",
+                                serde_json::json!({
+                                    "rules": applied_rules, "action": "modify"
+                                }),
+                            );
+                            modified
+                        }
+                        RuleOutcome::Pass => item,
+                    };
+
+                    match state.db.insert_item(&final_item, max_size) {
                         Ok(pruned_items) => {
                             // Delete pruned images
                             for pruned in pruned_items {
@@ -227,8 +292,7 @@ impl ClipboardHandler for ClipboardMonitor {
                     if let Some(buffer) = image::RgbaImage::from_raw(width, height, rgba.to_vec()) {
                         let timestamp = Local::now().timestamp_nanos_opt().unwrap_or(0);
                         let filename = format!("{}.png", timestamp);
-                        let app_data_dir = self.app_handle.path().app_data_dir().unwrap();
-                        let image_path = app_data_dir.join("images").join(&filename);
+                        let image_path = state.storage_paths.images_dir().join(&filename);
 
                         if let Err(e) = buffer.save(&image_path) {
                             log::error!("Failed to save image to disk: {}", e);
@@ -245,9 +309,43 @@ impl ClipboardHandler for ClipboardMonitor {
                                 collection_id: None,
                                 note: None,
                                 html_content: None,
+                                is_snippet: false,
+                                screenshot_id: None,
                             };
 
-                            match state.db.insert_item(&item, max_size) {
+                            // Evaluate rules
+                            let final_item = match state.rules_engine.evaluate(&item) {
+                                RuleOutcome::Ignore { rule_name } => {
+                                    log::info!("Rule '{}' ignored image clipboard item", rule_name);
+                                    let _ = self.app_handle.emit(
+                                        "rule-applied",
+                                        serde_json::json!({
+                                            "rule": rule_name, "action": "ignore"
+                                        }),
+                                    );
+                                    // Clean up saved image since we're ignoring
+                                    let _ = std::fs::remove_file(&image_path);
+                                    return CallbackResult::Next;
+                                }
+                                RuleOutcome::Modify {
+                                    item: modified,
+                                    applied_rules,
+                                } => {
+                                    for r in &applied_rules {
+                                        log::info!("Rule '{}' modified image clipboard item", r);
+                                    }
+                                    let _ = self.app_handle.emit(
+                                        "rule-applied",
+                                        serde_json::json!({
+                                            "rules": applied_rules, "action": "modify"
+                                        }),
+                                    );
+                                    modified
+                                }
+                                RuleOutcome::Pass => item,
+                            };
+
+                            match state.db.insert_item(&final_item, max_size) {
                                 Ok(pruned_items) => {
                                     // Delete pruned images
                                     for pruned in pruned_items {
@@ -274,7 +372,7 @@ impl ClipboardHandler for ClipboardMonitor {
         if updated {
             let history = state
                 .db
-                .get_history(1, 20, None, false, false, None)
+                .get_history(1, 20, None, false, false, None, None, None, None, None)
                 .unwrap_or_default();
             if let Err(e) = update_tray_menu(&self.app_handle, &history) {
                 log::error!("Failed to update tray: {}", e);

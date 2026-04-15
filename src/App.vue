@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import MainWindow from "@/views/MainWindow.vue";
-import PopupWindow from "@/views/PopupWindow.vue";
-import ScreenshotWindow from "@/views/ScreenshotWindow.vue";
-import ConfirmProvider from "./components/ui/alert-dialog/ConfirmProvider.vue";
+import { ref, onMounted } from 'vue';
+import { getCurrentWindow } from '@tauri-apps/api/window';
+import MainWindow from '@/views/MainWindow.vue';
+import PopupWindow from '@/views/PopupWindow.vue';
+import ScreenshotWindow from '@/views/ScreenshotWindow.vue';
+import ConfirmProvider from './components/ui/alert-dialog/ConfirmProvider.vue';
+import PermissionDialog from './components/PermissionDialog.vue';
 
-const currentWindowLabel = ref("main");
+const currentWindowLabel = ref('main');
 
 onMounted(() => {
   const appWindow = getCurrentWindow();
@@ -19,4 +20,5 @@ onMounted(() => {
   <ScreenshotWindow v-else-if="currentWindowLabel.startsWith('screenshot')" />
   <MainWindow v-else />
   <ConfirmProvider />
+  <PermissionDialog v-if="currentWindowLabel === 'main'" />
 </template>

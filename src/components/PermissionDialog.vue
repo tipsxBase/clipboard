@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
+import { useI18n } from 'vue-i18n';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -11,14 +12,14 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 
+const { t } = useI18n();
 const showPermissionDialog = ref(false);
 const isMacOS = ref(false);
 
 onMounted(async () => {
-  // 检测平台
   const userAgent = navigator.userAgent.toLowerCase();
   isMacOS.value = userAgent.includes('mac');
-  
+
   if (isMacOS.value) {
     checkPermission();
   }
@@ -35,10 +36,8 @@ const checkPermission = async () => {
   }
 };
 
-const openSystemSettings = () => {
-  // 在 macOS 上，用户需要手动打开系统设置
+const dismiss = () => {
   showPermissionDialog.value = false;
-  alert('请按照以下步骤授予权限：\n\n1. 打开"系统设置"\n2. 进入"隐私与安全性"\n3. 选择"屏幕录制"\n4. 勾选 "Clipboard Manager"\n5. 重启应用程序');
 };
 </script>
 
@@ -46,29 +45,25 @@ const openSystemSettings = () => {
   <AlertDialog v-model:open="showPermissionDialog">
     <AlertDialogContent>
       <AlertDialogHeader>
-        <AlertDialogTitle>需要屏幕录制权限</AlertDialogTitle>
+        <AlertDialogTitle>{{ t('permission.screenRecordingTitle') }}</AlertDialogTitle>
         <AlertDialogDescription>
           <div class="space-y-3">
-            <p>
-              此应用需要屏幕录制权限才能捕获截图。请按照以下步骤授予权限：
-            </p>
+            <p>{{ t('permission.screenRecordingDescription') }}</p>
             <ol class="list-decimal list-inside space-y-2 text-sm">
-              <li>打开"系统设置" (System Settings)</li>
-              <li>进入"隐私与安全性" (Privacy & Security)</li>
-              <li>选择"屏幕录制" (Screen Recording)</li>
-              <li>找到并勾选 "Clipboard Manager"</li>
-              <li><strong>重启应用程序</strong>（重要！）</li>
+              <li>{{ t('permission.step1') }}</li>
+              <li>{{ t('permission.step2') }}</li>
+              <li>{{ t('permission.step3') }}</li>
+              <li>{{ t('permission.step4') }}</li>
+              <li>
+                <strong>{{ t('permission.step5') }}</strong>
+              </li>
             </ol>
-            <p class="text-xs text-muted-foreground">
-              注意：如果没有授予权限，截图功能将只能捕获桌面背景，无法捕获其他应用程序窗口。
-            </p>
+            <p class="text-xs text-muted-foreground">{{ t('permission.note') }}</p>
           </div>
         </AlertDialogDescription>
       </AlertDialogHeader>
       <AlertDialogFooter>
-        <AlertDialogAction @click="openSystemSettings">
-          我知道了
-        </AlertDialogAction>
+        <AlertDialogAction @click="dismiss">{{ t('permission.acknowledge') }}</AlertDialogAction>
       </AlertDialogFooter>
     </AlertDialogContent>
   </AlertDialog>

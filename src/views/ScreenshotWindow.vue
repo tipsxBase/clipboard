@@ -1,8 +1,15 @@
+<!--
+  SCREENSHOT MAINLINE
+  This file, together with src/composables/useFabricCanvas.ts, is the maintained
+  screenshot implementation. All screenshot feature work MUST go through this
+  mainline. See also: src-tauri/src/commands.rs (start_capture) and
+  src-tauri/src/screenshot.rs for the backend side.
+-->
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, nextTick, computed } from "vue";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { listen, emit, type UnlistenFn } from "@tauri-apps/api/event";
-import { invoke, convertFileSrc } from "@tauri-apps/api/core";
+import { onMounted, onUnmounted, ref, nextTick, computed } from 'vue';
+import { getCurrentWindow } from '@tauri-apps/api/window';
+import { listen, emit, type UnlistenFn } from '@tauri-apps/api/event';
+import { invoke, convertFileSrc } from '@tauri-apps/api/core';
 import {
   Check,
   X,
@@ -15,15 +22,22 @@ import {
   Type,
   Undo2,
   Redo2,
-} from "lucide-vue-next";
-import { useToast } from "@/composables/useToast";
-import {
-  useFabricCanvas,
-  type DrawingToolType,
-} from "@/composables/useFabricCanvas";
-import type { CaptureResult } from "@/types";
+  Droplets,
+  Grid3x3,
+} from 'lucide-vue-next';
+import { useToast } from '@/composables/useToast';
+import { useI18n } from 'vue-i18n';
+import { useFabricCanvas, type DrawingToolType } from '@/composables/useFabricCanvas';
+import { ShapeRegistry } from '@/composables/shapes';
+import type { CaptureResult, AppConfig } from '@/types';
 
+const { t } = useI18n();
 const { showToast } = useToast();
+
+// Screenshot export preferences (loaded from config)
+const screenshotFormat = ref<'png' | 'jpeg' | 'webp'>('png');
+const screenshotQuality = ref(90);
+const screenshotSaveAction = ref<'clipboard' | 'file' | 'both'>('clipboard');
 
 // Canvas refs
 const bgCanvas = ref<HTMLCanvasElement | null>(null);
@@ -31,7 +45,7 @@ const maskCanvas = ref<HTMLCanvasElement | null>(null);
 const magnifierCanvas = ref<HTMLCanvasElement | null>(null);
 const selectionCanvasEl = ref<HTMLCanvasElement | null>(null);
 
-import { type TPointerEvent } from "fabric";
+import { type TPointerEvent } from 'fabric';
 
 // Fabric.js Canvas
 const {
@@ -52,9 +66,9 @@ const {
   toDataURL,
   dispose: disposeFabricCanvas,
 } = useFabricCanvas({
-  strokeColor: "#ff0000",
+  strokeColor: '#ff0000',
   strokeWidth: 3,
-  fillColor: "transparent",
+  fillColor: 'transparent',
 });
 
 // State
@@ -71,9 +85,7 @@ const mousePos = ref({ x: 0, y: 0 });
 const canvasMousePos = ref({ x: 0, y: 0 });
 
 // Selection state (physical pixels)
-const selection = ref<{ x: number; y: number; w: number; h: number } | null>(
-  null,
-);
+const selection = ref<{ x: number; y: number; w: number; h: number } | null>(null);
 const startPos = ref({ x: 0, y: 0 });
 const dragStartPos = ref({ x: 0, y: 0 });
 const dragStartSelection = ref<{
@@ -87,7 +99,7 @@ const dragStartSelection = ref<{
 const scaleFactor = ref({ x: 1, y: 1 });
 
 // Pixel color under cursor
-const pixelColor = ref({ r: 0, g: 0, b: 0, hex: "#000000" });
+const pixelColor = ref({ r: 0, g: 0, b: 0, hex: '#000000' });
 
 // Computed bounds of all screens (physical pixels)
 // With Per-Monitor Window strategy, bounds is simply the window dimensions
@@ -110,17 +122,28 @@ let unlistenSelection: UnlistenFn | null = null;
 // let unlistenCloseAll: UnlistenFn | null = null; // Removed: Backend handles closing now
 
 onMounted(async () => {
-  document.addEventListener("keydown", handleKeyDown);
-  document.addEventListener("mousemove", handleGlobalMouseMove);
+  document.addEventListener('keydown', handleKeyDown);
+  document.addEventListener('mousemove', handleGlobalMouseMove);
+
+  // Load screenshot export preferences
+  try {
+    const cfg = await invoke<AppConfig>('get_config');
+    screenshotFormat.value = (cfg.screenshot_format as 'png' | 'jpeg' | 'webp') || 'png';
+    screenshotQuality.value = cfg.screenshot_quality ?? 90;
+    screenshotSaveAction.value =
+      (cfg.screenshot_save_action as 'clipboard' | 'file' | 'both') || 'clipboard';
+  } catch (e) {
+    console.error('Failed to load screenshot config:', e);
+  }
 
   // Parse screen_id from URL query params
   const urlParams = new URLSearchParams(window.location.search);
-  const screenIdParam = urlParams.get("screen_id");
+  const screenIdParam = urlParams.get('screen_id');
   const screenId = screenIdParam ? parseInt(screenIdParam, 10) : null;
   currentScreenId.value = screenId;
 
   // Listen for selection start in other windows
-  unlistenSelection = await listen("selection-started", (event: any) => {
+  unlistenSelection = await listen('selection-started', (event: any) => {
     if (event.payload.id !== currentScreenId.value) {
       resetSelection();
     }
@@ -128,10 +151,10 @@ onMounted(async () => {
 
   // Removed close-all-screens listener as we now rely on backend close_capture for reliable multi-window closing
 
-  console.log("Screenshot Window Mounted. Screen ID:", screenId);
+  console.log('Screenshot Window Mounted. Screen ID:', screenId);
 
   const processCaptures = async (allCaptures: CaptureResult[]) => {
-    console.log("Processing captures:", allCaptures);
+    console.log('Processing captures:', allCaptures);
 
     let targetCapture: CaptureResult | undefined;
     const sId = currentScreenId.value;
@@ -139,7 +162,7 @@ onMounted(async () => {
     if (sId !== null) {
       targetCapture = allCaptures.find((c) => c.id === sId);
     } else {
-      console.warn("No screen_id provided, defaulting to first capture.");
+      console.warn('No screen_id provided, defaulting to first capture.');
       targetCapture = allCaptures[0];
     }
 
@@ -151,29 +174,26 @@ onMounted(async () => {
       isReady.value = true;
       getCurrentWindow().setFocus();
     } else {
-      console.error("Could not find capture for ID:", sId);
+      console.error('Could not find capture for ID:', sId);
     }
   };
 
-  unlistenCapture = await listen<CaptureResult[]>(
-    "screenshot-captured",
-    async (event) => {
-      await processCaptures(event.payload);
-    },
-  );
+  unlistenCapture = await listen<CaptureResult[]>('screenshot-captured', async (event) => {
+    await processCaptures(event.payload);
+  });
 
   // Try to fetch data immediately (in case event was missed)
   try {
-    const data = await invoke<CaptureResult[]>("get_capture_data");
+    const data = await invoke<CaptureResult[]>('get_capture_data');
     await processCaptures(data);
   } catch (e) {
-    console.log("No initial capture data found, waiting for event.", e);
+    console.log('No initial capture data found, waiting for event.', e);
   }
 });
 
 onUnmounted(() => {
-  document.removeEventListener("keydown", handleKeyDown);
-  document.removeEventListener("mousemove", handleGlobalMouseMove);
+  document.removeEventListener('keydown', handleKeyDown);
+  document.removeEventListener('mousemove', handleGlobalMouseMove);
   if (unlistenCapture) {
     unlistenCapture();
   }
@@ -184,13 +204,21 @@ onUnmounted(() => {
 });
 
 const handleKeyDown = (e: KeyboardEvent) => {
-  if (e.key === "Escape") {
+  if (e.key === 'Escape') {
     e.preventDefault();
     // ESC 键应该总是关闭所有截图窗口，不管是否有选区
     close();
-  } else if (e.key === "Enter" && selection.value) {
+  } else if (e.key === 'Enter' && selection.value) {
     e.preventDefault();
     confirmSelection();
+  } else if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'z') {
+    // Cmd/Ctrl+Shift+Z → redo
+    e.preventDefault();
+    if (canRedo()) redo();
+  } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
+    // Cmd/Ctrl+Z → undo
+    e.preventDefault();
+    if (canUndo()) undo();
   }
 };
 
@@ -207,7 +235,7 @@ const handleGlobalMouseMove = (e: MouseEvent) => {
 const loadImage = (src: string): Promise<HTMLImageElement> => {
   return new Promise((resolve, reject) => {
     const img = new Image();
-    img.crossOrigin = "anonymous";
+    img.crossOrigin = 'anonymous';
     img.onload = () => resolve(img);
     img.onerror = reject;
     img.src = src;
@@ -218,7 +246,7 @@ const loadImage = (src: string): Promise<HTMLImageElement> => {
 const renderBackground = async () => {
   const canvas = bgCanvas.value;
   if (!canvas) return;
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
   if (!ctx) return;
 
   const w = bounds.value.w;
@@ -241,7 +269,7 @@ const renderBackground = async () => {
       const img = await loadImage(convertFileSrc(cap.path));
       return { img, cap };
     } catch (e) {
-      console.error("Error loading screenshot:", cap.path, e);
+      console.error('Error loading screenshot:', cap.path, e);
       return null;
     }
   });
@@ -266,11 +294,11 @@ const renderBackground = async () => {
 const renderMask = () => {
   const cvs = maskCanvas.value;
   if (!cvs) return;
-  const ctx = cvs.getContext("2d");
+  const ctx = cvs.getContext('2d');
   if (!ctx) return;
 
   ctx.clearRect(0, 0, cvs.width, cvs.height);
-  ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
   ctx.fillRect(0, 0, cvs.width, cvs.height);
 
   if (selection.value && selection.value.w > 0 && selection.value.h > 0) {
@@ -279,13 +307,13 @@ const renderMask = () => {
     // Clear selection area
     ctx.clearRect(x, y, w, h);
     // Draw border
-    ctx.strokeStyle = "#00e676";
+    ctx.strokeStyle = '#00e676';
     ctx.lineWidth = 2;
     ctx.strokeRect(x, y, w, h);
 
     // Draw resize handles
     const handleSize = 8;
-    ctx.fillStyle = "#00e676";
+    ctx.fillStyle = '#00e676';
 
     // 8 handles: corners + edge midpoints
     const handles = [
@@ -304,7 +332,7 @@ const renderMask = () => {
     });
 
     // Draw dashed lines (rule of thirds)
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.3)";
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
     ctx.lineWidth = 1;
     ctx.setLineDash([4, 4]);
 
@@ -326,7 +354,7 @@ const renderMask = () => {
 const updatePixelColor = (x: number, y: number) => {
   const canvas = bgCanvas.value;
   if (!canvas) return;
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
   if (!ctx) return;
 
   try {
@@ -335,7 +363,7 @@ const updatePixelColor = (x: number, y: number) => {
     const g = pixel[1];
     const b = pixel[2];
     const hex =
-      `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`.toUpperCase();
+      `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`.toUpperCase();
     pixelColor.value = { r, g, b, hex };
   } catch {
     // Ignore errors
@@ -348,8 +376,8 @@ const updateMagnifier = (x: number, y: number) => {
   const bgCvs = bgCanvas.value;
   if (!magCanvas || !bgCvs || selection.value) return;
 
-  const ctx = magCanvas.getContext("2d");
-  const bgCtx = bgCvs.getContext("2d", { willReadFrequently: true });
+  const ctx = magCanvas.getContext('2d');
+  const bgCtx = bgCvs.getContext('2d', { willReadFrequently: true });
   if (!ctx || !bgCtx) return;
 
   const magSize = 120;
@@ -371,11 +399,11 @@ const updateMagnifier = (x: number, y: number) => {
     0,
     0,
     magSize,
-    magSize,
+    magSize
   );
 
   // Draw crosshair
-  ctx.strokeStyle = "#00e676";
+  ctx.strokeStyle = '#00e676';
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(magSize / 2, 0);
@@ -385,7 +413,7 @@ const updateMagnifier = (x: number, y: number) => {
   ctx.stroke();
 
   // Draw border
-  ctx.strokeStyle = "#00e676";
+  ctx.strokeStyle = '#00e676';
   ctx.lineWidth = 2;
   ctx.strokeRect(0, 0, magSize, magSize);
 };
@@ -403,19 +431,16 @@ const getResizeHandle = (x: number, y: number): string | null => {
   const threshold = 12;
 
   // Corners
-  if (Math.abs(x - sx) < threshold && Math.abs(y - sy) < threshold) return "nw";
-  if (Math.abs(x - (sx + w)) < threshold && Math.abs(y - sy) < threshold)
-    return "ne";
-  if (Math.abs(x - sx) < threshold && Math.abs(y - (sy + h)) < threshold)
-    return "sw";
-  if (Math.abs(x - (sx + w)) < threshold && Math.abs(y - (sy + h)) < threshold)
-    return "se";
+  if (Math.abs(x - sx) < threshold && Math.abs(y - sy) < threshold) return 'nw';
+  if (Math.abs(x - (sx + w)) < threshold && Math.abs(y - sy) < threshold) return 'ne';
+  if (Math.abs(x - sx) < threshold && Math.abs(y - (sy + h)) < threshold) return 'sw';
+  if (Math.abs(x - (sx + w)) < threshold && Math.abs(y - (sy + h)) < threshold) return 'se';
 
   // Edges
-  if (Math.abs(x - sx) < threshold && y > sy && y < sy + h) return "w";
-  if (Math.abs(x - (sx + w)) < threshold && y > sy && y < sy + h) return "e";
-  if (Math.abs(y - sy) < threshold && x > sx && x < sx + w) return "n";
-  if (Math.abs(y - (sy + h)) < threshold && x > sx && x < sx + w) return "s";
+  if (Math.abs(x - sx) < threshold && y > sy && y < sy + h) return 'w';
+  if (Math.abs(x - (sx + w)) < threshold && y > sy && y < sy + h) return 'e';
+  if (Math.abs(y - sy) < threshold && x > sx && x < sx + w) return 'n';
+  if (Math.abs(y - (sy + h)) < threshold && x > sx && x < sx + w) return 's';
 
   return null;
 };
@@ -441,13 +466,16 @@ const renderSelectionCanvas = async () => {
   if (!canvasEl) return;
 
   // 创建临时 canvas 获取选区图像
-  const tempCanvas = document.createElement("canvas");
+  const tempCanvas = document.createElement('canvas');
   tempCanvas.width = w;
   tempCanvas.height = h;
-  const tempCtx = tempCanvas.getContext("2d");
+  const tempCtx = tempCanvas.getContext('2d');
   if (!tempCtx) return;
 
   tempCtx.drawImage(bgCvs, x, y, w, h, 0, 0, w, h);
+
+  // 设置背景画布供 blur/mosaic 工具使用
+  ShapeRegistry.setBackgroundCanvas(tempCanvas);
 
   // 计算 CSS 尺寸（逻辑像素）
   const cssWidth = w / scaleFactor.value.x;
@@ -476,13 +504,16 @@ const updateSelectionCanvasContent = async () => {
   if (!canvasEl) return;
 
   // 创建临时 canvas 获取选区图像
-  const tempCanvas = document.createElement("canvas");
+  const tempCanvas = document.createElement('canvas');
   tempCanvas.width = w;
   tempCanvas.height = h;
-  const tempCtx = tempCanvas.getContext("2d");
+  const tempCtx = tempCanvas.getContext('2d');
   if (!tempCtx) return;
 
   tempCtx.drawImage(bgCvs, x, y, w, h, 0, 0, w, h);
+
+  // 设置背景画布供 blur/mosaic 工具使用
+  ShapeRegistry.setBackgroundCanvas(tempCanvas);
 
   // 计算 CSS 尺寸（逻辑像素）
   const cssWidth = w / scaleFactor.value.x;
@@ -527,11 +558,11 @@ const handleMouseDown = (e: MouseEvent) => {
   const target = e.target as HTMLElement;
 
   // 如果点击在工具栏或按钮上，忽略
-  if (target.closest(".toolbar") || target.closest("button")) return;
+  if (target.closest('.toolbar') || target.closest('button')) return;
 
   // 如果点击在 Fabric canvas 上，让 Fabric 处理
   // Fabric canvas 的 upper-canvas 会接收事件
-  if (target.classList.contains("upper-canvas")) {
+  if (target.classList.contains('upper-canvas')) {
     return;
   }
 
@@ -564,7 +595,7 @@ const handleMouseDown = (e: MouseEvent) => {
   // 没有选区时，开始新的选区
   isSelecting.value = true;
   // Notify other windows to clear their selection
-  emit("selection-started", { id: currentScreenId.value });
+  emit('selection-started', { id: currentScreenId.value });
   startPos.value = pos;
   selection.value = { x: pos.x, y: pos.y, w: 0, h: 0 };
   renderMask();
@@ -593,14 +624,8 @@ const handleMouseMove = (e: MouseEvent) => {
     let newX = dragStartSelection.value.x + dx;
     let newY = dragStartSelection.value.y + dy;
 
-    newX = Math.max(
-      0,
-      Math.min(bounds.value.w - dragStartSelection.value.w, newX),
-    );
-    newY = Math.max(
-      0,
-      Math.min(bounds.value.h - dragStartSelection.value.h, newY),
-    );
+    newX = Math.max(0, Math.min(bounds.value.w - dragStartSelection.value.w, newX));
+    newY = Math.max(0, Math.min(bounds.value.h - dragStartSelection.value.h, newY));
 
     selection.value = {
       x: newX,
@@ -626,38 +651,38 @@ const handleMouseMove = (e: MouseEvent) => {
       newH = sh;
 
     switch (resizeHandle.value) {
-      case "nw":
+      case 'nw':
         newX = sx + dx;
         newY = sy + dy;
         newW = sw - dx;
         newH = sh - dy;
         break;
-      case "ne":
+      case 'ne':
         newY = sy + dy;
         newW = sw + dx;
         newH = sh - dy;
         break;
-      case "sw":
+      case 'sw':
         newX = sx + dx;
         newW = sw - dx;
         newH = sh + dy;
         break;
-      case "se":
+      case 'se':
         newW = sw + dx;
         newH = sh + dy;
         break;
-      case "n":
+      case 'n':
         newY = sy + dy;
         newH = sh - dy;
         break;
-      case "s":
+      case 's':
         newH = sh + dy;
         break;
-      case "w":
+      case 'w':
         newX = sx + dx;
         newW = sw - dx;
         break;
-      case "e":
+      case 'e':
         newW = sw + dx;
         break;
     }
@@ -703,47 +728,47 @@ const handleMouseUp = () => {
 };
 
 // Update cursor style
-const cursorStyle = ref("crosshair");
+const cursorStyle = ref('crosshair');
 
 const cursorClass = computed(() => {
-  if (!isReady.value) return "cursor-wait";
+  if (!isReady.value) return 'cursor-wait';
   return `cursor-${cursorStyle.value}`;
 });
 
 const updateCursor = (x: number, y: number) => {
   if (!selection.value) {
-    cursorStyle.value = "crosshair";
+    cursorStyle.value = 'crosshair';
     return;
   }
 
   if (fabricActiveTool.value) {
-    cursorStyle.value = "crosshair";
+    cursorStyle.value = 'crosshair';
     return;
   }
 
   const handle = getResizeHandle(x, y);
   if (handle) {
     const cursors: Record<string, string> = {
-      nw: "nw-resize",
-      ne: "ne-resize",
-      sw: "sw-resize",
-      se: "se-resize",
-      n: "n-resize",
-      s: "s-resize",
-      w: "w-resize",
-      e: "e-resize",
+      nw: 'nw-resize',
+      ne: 'ne-resize',
+      sw: 'sw-resize',
+      se: 'se-resize',
+      n: 'n-resize',
+      s: 's-resize',
+      w: 'w-resize',
+      e: 'e-resize',
     };
-    cursorStyle.value = cursors[handle] || "crosshair";
+    cursorStyle.value = cursors[handle] || 'crosshair';
     return;
   }
 
   const inside = isInsideSelection(x, y);
   if (inside) {
-    cursorStyle.value = hasFabricObjects() ? "crosshair" : "move";
+    cursorStyle.value = hasFabricObjects() ? 'crosshair' : 'move';
     return;
   }
 
-  cursorStyle.value = "crosshair";
+  cursorStyle.value = 'crosshair';
 };
 
 // Double click handler（仿照 QQ/微信截图）
@@ -752,7 +777,7 @@ const handleDoubleClick = (e: MouseEvent) => {
   const target = e.target as HTMLElement;
 
   // 如果点击在工具栏或按钮上，忽略
-  if (target.closest(".toolbar") || target.closest("button")) return;
+  if (target.closest('.toolbar') || target.closest('button')) return;
 
   // 如果 Fabric 画布上有活动对象或者点击到了某个对象，优先让 Fabric 处理（例如双击编辑文字）
   if (fabricCanvas.value) {
@@ -764,9 +789,7 @@ const handleDoubleClick = (e: MouseEvent) => {
     // findTarget 需要 pointerEvent
     // 如果 e 是 MouseEvent，在 Fabric 中通常可以直接用
     // 但为了类型安全，先检查
-    const targetObj = fabricCanvas.value.findTarget(
-      e as unknown as TPointerEvent,
-    );
+    const targetObj = fabricCanvas.value.findTarget(e as unknown as TPointerEvent);
     if (targetObj) return;
   }
 
@@ -796,25 +819,57 @@ const resetSelection = () => {
 const confirmSelection = async () => {
   if (!selection.value || !fabricCanvas.value) return;
 
-  // 使用 Fabric.js 导出图像
-  const base64data = toDataURL("png");
+  const fmt = screenshotFormat.value;
+  const qual = screenshotQuality.value;
+  const action = screenshotSaveAction.value;
+
+  // Export canvas with the configured format
+  const canvasFmt = fmt === 'jpeg' ? 'jpeg' : 'png';
+  const base64data = toDataURL(canvasFmt, fmt === 'jpeg' ? qual / 100 : 1);
   if (!base64data) return;
 
   try {
-    const savedPath = await invoke("save_captured_image", {
-      base64Data: base64data,
-    });
-    await invoke("set_clipboard_item", {
-      content: savedPath as string,
-      kind: "image",
-      id: null,
-      htmlContent: null,
-    });
-    showToast("截图已保存到剪贴板");
+    if (action === 'clipboard' || action === 'both') {
+      const savedPath = await invoke('save_captured_image', {
+        base64Data: base64data,
+        format: fmt,
+        quality: qual,
+      });
+      await invoke('set_clipboard_item', {
+        content: savedPath as string,
+        kind: 'image',
+        id: null,
+        htmlContent: null,
+        screenshotId: null,
+      });
+    }
+
+    if (action === 'file' || action === 'both') {
+      if (action === 'file') {
+        // Save to file and add to history (without writing to clipboard)
+        const savedPath = await invoke('save_captured_image', {
+          base64Data: base64data,
+          format: fmt,
+          quality: qual,
+        });
+        await invoke('add_to_history', {
+          content: savedPath as string,
+          kind: 'image',
+        });
+      }
+    }
+
+    if (action === 'clipboard') {
+      showToast(t('screenshot.savedToClipboard'));
+    } else if (action === 'file') {
+      showToast(t('screenshot.savedToFile'));
+    } else {
+      showToast(t('screenshot.savedToBoth'));
+    }
     close();
   } catch (e) {
     console.error(e);
-    showToast("保存失败: " + String(e));
+    showToast(t('screenshot.saveFailed') + String(e));
   }
 };
 
@@ -822,11 +877,16 @@ const confirmSelection = async () => {
 const downloadScreenshot = () => {
   if (!selection.value || !fabricCanvas.value) return;
 
-  const link = document.createElement("a");
-  link.download = `screenshot_${Date.now()}.png`;
-  link.href = toDataURL("png");
+  const fmt = screenshotFormat.value;
+  const ext = fmt === 'jpeg' ? 'jpg' : fmt;
+  const canvasFmt = fmt === 'jpeg' ? 'jpeg' : 'png';
+  const qual = fmt === 'jpeg' ? screenshotQuality.value / 100 : 1;
+
+  const link = document.createElement('a');
+  link.download = `screenshot_${Date.now()}.${ext}`;
+  link.href = toDataURL(canvasFmt, qual);
   link.click();
-  showToast("截图已下载");
+  showToast(t('screenshot.downloaded'));
 };
 
 const close = async () => {
@@ -838,12 +898,12 @@ const close = async () => {
   disposeFabricCanvas();
 
   // Call Rust to ensure backend knows and cleans up
-  await invoke("close_capture");
+  await invoke('close_capture');
 };
 
 // Toolbar position
 const toolbarStyle = computed(() => {
-  if (!selection.value) return { display: "none" };
+  if (!selection.value) return { display: 'none' };
 
   const logicalX = selection.value.x / scaleFactor.value.x;
   const logicalY = selection.value.y / scaleFactor.value.y;
@@ -874,17 +934,14 @@ const toolbarStyle = computed(() => {
     top = logicalY + logicalH - toolbarHeight - margin;
   }
 
-  top = Math.max(
-    margin,
-    Math.min(window.innerHeight - toolbarHeight - margin, top),
-  );
+  top = Math.max(margin, Math.min(window.innerHeight - toolbarHeight - margin, top));
 
   return { left: `${left}px`, top: `${top}px` };
 });
 
 // Size info position
 const sizeInfoStyle = computed(() => {
-  if (!selection.value) return { display: "none" };
+  if (!selection.value) return { display: 'none' };
 
   const logicalX = selection.value.x / scaleFactor.value.x;
   const logicalY = selection.value.y / scaleFactor.value.y;
@@ -897,7 +954,7 @@ const sizeInfoStyle = computed(() => {
 
 // Magnifier position
 const magnifierStyle = computed(() => {
-  if (selection.value) return { display: "none" };
+  if (selection.value) return { display: 'none' };
 
   const x = mousePos.value.x;
   const y = mousePos.value.y;
@@ -915,7 +972,7 @@ const magnifierStyle = computed(() => {
 
 // Selection size text
 const selectionSize = computed(() => {
-  if (!selection.value) return "";
+  if (!selection.value) return '';
   return `${Math.round(selection.value.w)} × ${Math.round(selection.value.h)}`;
 });
 
@@ -940,14 +997,7 @@ const coordDisplay = computed(() => {
 
 <template>
   <div
-    :class="[
-      'w-screen',
-      'h-screen',
-      'overflow-hidden',
-      'relative',
-      'select-none',
-      cursorClass,
-    ]"
+    :class="['w-screen', 'h-screen', 'overflow-hidden', 'relative', 'select-none', cursorClass]"
     @mousedown="handleMouseDown"
     @mousemove="handleMouseMove"
     @mouseup="handleMouseUp"
@@ -1034,7 +1084,7 @@ const coordDisplay = computed(() => {
             class="p-2 hover:bg-white/10 transition-colors rounded"
             :class="{ 'bg-white/20': fabricActiveTool === 'rect' }"
             @click.stop="selectTool('rect')"
-            title="矩形"
+            :title="t('screenshot.toolRect')"
           >
             <Square class="w-4 h-4 text-white" />
           </button>
@@ -1042,7 +1092,7 @@ const coordDisplay = computed(() => {
             class="p-2 hover:bg-white/10 transition-colors rounded"
             :class="{ 'bg-white/20': fabricActiveTool === 'ellipse' }"
             @click.stop="selectTool('ellipse')"
-            title="椭圆"
+            :title="t('screenshot.toolEllipse')"
           >
             <Circle class="w-4 h-4 text-white" />
           </button>
@@ -1050,7 +1100,7 @@ const coordDisplay = computed(() => {
             class="p-2 hover:bg-white/10 transition-colors rounded"
             :class="{ 'bg-white/20': fabricActiveTool === 'arrow' }"
             @click.stop="selectTool('arrow')"
-            title="箭头"
+            :title="t('screenshot.toolArrow')"
           >
             <ArrowRight class="w-4 h-4 text-white" />
           </button>
@@ -1058,7 +1108,7 @@ const coordDisplay = computed(() => {
             class="p-2 hover:bg-white/10 transition-colors rounded"
             :class="{ 'bg-white/20': fabricActiveTool === 'pen' }"
             @click.stop="selectTool('pen')"
-            title="画笔"
+            :title="t('screenshot.toolPen')"
           >
             <Pencil class="w-4 h-4 text-white" />
           </button>
@@ -1066,15 +1116,31 @@ const coordDisplay = computed(() => {
             class="p-2 hover:bg-white/10 transition-colors rounded"
             :class="{ 'bg-white/20': fabricActiveTool === 'text' }"
             @click.stop="selectTool('text')"
-            title="文字"
+            :title="t('screenshot.toolText')"
           >
             <Type class="w-4 h-4 text-white" />
           </button>
+          <button
+            class="p-2 hover:bg-white/10 transition-colors rounded"
+            :class="{ 'bg-white/20': fabricActiveTool === 'blur' }"
+            @click.stop="selectTool('blur')"
+            :title="t('screenshot.toolBlur')"
+          >
+            <Droplets class="w-4 h-4 text-white" />
+          </button>
+          <button
+            class="p-2 hover:bg-white/10 transition-colors rounded"
+            :class="{ 'bg-white/20': fabricActiveTool === 'mosaic' }"
+            @click.stop="selectTool('mosaic')"
+            :title="t('screenshot.toolMosaic')"
+          >
+            <Grid3x3 class="w-4 h-4 text-white" />
+          </button>
         </div>
 
-        <!-- Color & Size Settings (Only show when tool is selected) -->
+        <!-- Color & Size Settings (Only show when a stroke-based tool is selected) -->
         <div
-          v-if="fabricActiveTool"
+          v-if="fabricActiveTool && fabricActiveTool !== 'blur' && fabricActiveTool !== 'mosaic'"
           class="flex items-center border-r border-gray-600 px-2 gap-2"
         >
           <!-- Color Dropdown -->
@@ -1112,17 +1178,12 @@ const coordDisplay = computed(() => {
             </div>
           </div>
 
-          <div
-            v-if="fabricActiveTool !== 'text'"
-            class="w-px h-4 bg-gray-600 mx-1"
-          ></div>
+          <div v-if="fabricActiveTool !== 'text'" class="w-px h-4 bg-gray-600 mx-1"></div>
 
           <!-- Size Dropdown -->
           <!-- Hide size for Text tool -->
           <div v-if="fabricActiveTool !== 'text'" class="relative group">
-            <button
-              class="w-6 h-6 rounded-sm hover:bg-white/10 flex items-center justify-center"
-            >
+            <button class="w-6 h-6 rounded-sm hover:bg-white/10 flex items-center justify-center">
               <div
                 class="bg-white rounded-full"
                 :style="{
@@ -1159,7 +1220,7 @@ const coordDisplay = computed(() => {
             :class="{ 'opacity-50 cursor-not-allowed': !canUndo() }"
             :disabled="!canUndo()"
             @click.stop="undoDrawing"
-            title="撤销"
+            :title="t('screenshot.undo')"
           >
             <Undo2 class="w-4 h-4 text-white" />
           </button>
@@ -1168,7 +1229,7 @@ const coordDisplay = computed(() => {
             :class="{ 'opacity-50 cursor-not-allowed': !canRedo() }"
             :disabled="!canRedo()"
             @click.stop="redo"
-            title="重做"
+            :title="t('screenshot.redo')"
           >
             <Redo2 class="w-4 h-4 text-white" />
           </button>
@@ -1179,28 +1240,28 @@ const coordDisplay = computed(() => {
           <button
             class="p-2 hover:bg-white/10 transition-colors rounded"
             @click.stop="downloadScreenshot"
-            title="下载"
+            :title="t('screenshot.download')"
           >
             <Download class="w-4 h-4 text-white" />
           </button>
           <button
             class="p-2 hover:bg-white/10 transition-colors rounded"
             @click.stop="resetSelection"
-            title="重新选择"
+            :title="t('screenshot.reselect')"
           >
             <RotateCcw class="w-4 h-4 text-white" />
           </button>
           <button
             class="p-2 hover:bg-white/10 transition-colors rounded"
             @click.stop="close"
-            title="取消 (ESC)"
+            :title="t('screenshot.cancel')"
           >
             <X class="w-4 h-4 text-red-400" />
           </button>
           <button
             class="p-2 hover:bg-white/10 transition-colors rounded"
             @click.stop="confirmSelection"
-            title="完成 (Enter)"
+            :title="t('screenshot.confirm')"
           >
             <Check class="w-4 h-4 text-green-400" />
           </button>
@@ -1209,17 +1270,9 @@ const coordDisplay = computed(() => {
     </div>
 
     <!-- Keyboard Hints -->
-    <div
-      v-if="isReady"
-      class="absolute top-3 right-3 flex gap-2 pointer-events-none z-30"
-    >
-      <div class="px-2 py-1 bg-black/60 text-white text-xs rounded">
-        ESC 退出
-      </div>
-      <div
-        v-if="selection"
-        class="px-2 py-1 bg-black/60 text-white text-xs rounded"
-      >
+    <div v-if="isReady" class="absolute top-3 right-3 flex gap-2 pointer-events-none z-30">
+      <div class="px-2 py-1 bg-black/60 text-white text-xs rounded">ESC 退出</div>
+      <div v-if="selection" class="px-2 py-1 bg-black/60 text-white text-xs rounded">
         Enter 确认
       </div>
     </div>
@@ -1229,8 +1282,8 @@ const coordDisplay = computed(() => {
       v-if="isReady && !selection"
       class="absolute bottom-3 left-3 px-3 py-1.5 bg-black/70 text-white text-xs font-mono rounded pointer-events-none z-30"
     >
-      {{ coordDisplay }} | RGB({{ pixelColor.r }}, {{ pixelColor.g }},
-      {{ pixelColor.b }}) | {{ pixelColor.hex }}
+      {{ coordDisplay }} | RGB({{ pixelColor.r }}, {{ pixelColor.g }}, {{ pixelColor.b }}) |
+      {{ pixelColor.hex }}
     </div>
   </div>
 </template>

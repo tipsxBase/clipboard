@@ -20,6 +20,11 @@ pub struct ClipboardItem {
     pub note: Option<String>,
     #[serde(default)]
     pub html_content: Option<String>,
+    #[serde(default)]
+    pub is_snippet: bool,
+    /// Links OCR text items to their source screenshot image (history id)
+    #[serde(default)]
+    pub screenshot_id: Option<i64>,
 }
 
 fn default_data_type() -> String {
@@ -51,6 +56,34 @@ pub struct AppConfig {
     // 清空历史时是否删除收藏的内容
     #[serde(default)]
     pub clear_collected_on_clear: bool,
+    // 截图快捷键
+    #[serde(default = "default_screenshot_shortcut")]
+    pub screenshot_shortcut: String,
+    // 截图导出格式: "png" | "jpeg" | "webp"
+    #[serde(default = "default_screenshot_format")]
+    pub screenshot_format: String,
+    // 截图导出质量 (1-100, 仅 jpeg/webp 有效)
+    #[serde(default = "default_screenshot_quality")]
+    pub screenshot_quality: u8,
+    // 截图确认后的默认动作: "clipboard" | "file" | "both"
+    #[serde(default = "default_screenshot_action")]
+    pub screenshot_save_action: String,
+}
+
+fn default_screenshot_shortcut() -> String {
+    "CommandOrControl+Shift+S".to_string()
+}
+
+fn default_screenshot_format() -> String {
+    "png".to_string()
+}
+
+fn default_screenshot_quality() -> u8 {
+    90
+}
+
+fn default_screenshot_action() -> String {
+    "clipboard".to_string()
 }
 
 fn default_language() -> String {
@@ -84,6 +117,10 @@ impl Default for AppConfig {
             compact_mode: false,
             clear_pinned_on_clear: false,
             clear_collected_on_clear: false,
+            screenshot_shortcut: "CommandOrControl+Shift+S".to_string(),
+            screenshot_format: "png".to_string(),
+            screenshot_quality: 90,
+            screenshot_save_action: "clipboard".to_string(),
         }
     }
 }

@@ -65,6 +65,15 @@
 - **macOS**: `~/.clipboard-manager/`
 - **Windows/Linux**: `~/.clipboard-manager/`
 
+```
+~/.clipboard-manager/
+├── config.json      # 用户设置
+├── history.db       # 加密的剪贴板历史 (AES-GCM)
+├── secret.key       # 加密密钥
+├── images/          # 剪贴板图片历史
+└── captures/        # 保存的截图
+```
+
 > **注意**: 数据库使用 AES-GCM 加密存储，保障数据安全。
 
 ## 🛠️ 技术栈

@@ -5,6 +5,7 @@ use tauri_plugin_global_shortcut::GlobalShortcutExt;
 
 use crate::models::{AppConfig, CaptureResult, ClipboardItem, Collection};
 use crate::ocr::recognize_text;
+use crate::rules::Rule;
 use crate::state::AppState;
 use crate::tray::{update_pause_menu_item, update_tray_menu};
 use crate::utils::{classify_content, write_to_clipboard};
@@ -19,17 +20,21 @@ pub async fn start_capture(
     // 在 macOS 上检查屏幕录制权限
     #[cfg(target_os = "macos")]
     {
-        log::info!("Checking macOS screen recording permission...");
-        // 注意：实际的权限检查会在截图时由 screenshots crate 触发
-        // 如果没有权限，capture() 会返回空白或桌面图像
+        if !crate::screenshot::check_screen_recording_permission() {
+            log::warn!("Screen recording permission denied");
+            // 请求权限（触发系统弹窗）
+            extern "C" {
+                fn CGRequestScreenCaptureAccess() -> bool;
+            }
+            unsafe {
+                CGRequestScreenCaptureAccess();
+            }
+            return Err("Screen recording permission is required. Please grant access in System Settings > Privacy & Security > Screen Recording.".to_string());
+        }
     }
 
-    // Ensure cache directory exists
-    let cache_dir = app
-        .path()
-        .app_cache_dir()
-        .map_err(|e| e.to_string())?
-        .join("screenshots");
+    // Use the shared temp screenshot directory
+    let cache_dir = state.storage_paths.temp_screenshot_dir().clone();
     if !cache_dir.exists() {
         fs::create_dir_all(&cache_dir).map_err(|e| e.to_string())?;
     }
@@ -181,11 +186,22 @@ pub async fn close_capture(
 
 #[tauri::command]
 pub async fn save_captured_image(
-    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
     base64_data: String,
+    format: Option<String>,
+    quality: Option<u8>,
 ) -> Result<String, String> {
+    // Read preferences from config if not provided
+    let (fmt, qual) = {
+        let config = state.config.lock().unwrap();
+        (
+            format.unwrap_or_else(|| config.screenshot_format.clone()),
+            quality.unwrap_or(config.screenshot_quality),
+        )
+    };
+
     // 1. Decode base64
-    // remove data:image/png;base64, prefix if present
+    // remove data:image/...;base64, prefix if present
     let base64_clean = base64_data
         .split(",")
         .last()
@@ -196,22 +212,28 @@ pub async fn save_captured_image(
         .decode(base64_clean)
         .map_err(|e| e.to_string())?;
 
-    // 2. Generate path
-    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
-
-    // Ensure "images" subdirectory exists (optional, or just put in root)
-    // We can't easily rely on existing logic but let's check lib.rs for where we store images.
-    // Usually images are stored as files. Let's put them in `captures` folder.
-    let captures_dir = app_data_dir.join("captures");
+    // 2. Generate path with correct extension
+    let captures_dir = state.storage_paths.captures_dir();
     if !captures_dir.exists() {
         fs::create_dir_all(&captures_dir).map_err(|e| e.to_string())?;
     }
 
-    let filename = format!("capture_{}.png", Local::now().format("%Y%m%d_%H%M%S_%f"));
+    let ext = match fmt.as_str() {
+        "jpeg" | "jpg" => "jpg",
+        "webp" => "webp",
+        _ => "png",
+    };
+    let filename = format!(
+        "capture_{}.{}",
+        Local::now().format("%Y%m%d_%H%M%S_%f"),
+        ext
+    );
     let path = captures_dir.join(filename);
 
-    // 3. Write
-    fs::write(&path, data).map_err(|e| e.to_string())?;
+    // 3. Save with format conversion
+    state
+        .file_manager
+        .save_screenshot_with_format(&data, &path, &fmt, qual)?;
 
     Ok(path.to_string_lossy().to_string())
 }
@@ -225,12 +247,20 @@ pub fn get_history(
     search_regex: Option<bool>,
     search_case_sensitive: Option<bool>,
     collection_id: Option<i64>,
+    active_filter: Option<String>,
+    source_app: Option<String>,
+    time_range: Option<String>,
+    sort_mode: Option<String>,
 ) -> Vec<ClipboardItem> {
     log::info!(
-        "get_history query: {:?}, regex: {:?}, case: {:?}",
+        "get_history query: {:?}, regex: {:?}, case: {:?}, filter: {:?}, source_app: {:?}, time_range: {:?}, sort: {:?}",
         query,
         search_regex,
-        search_case_sensitive
+        search_case_sensitive,
+        active_filter,
+        source_app,
+        time_range,
+        sort_mode
     );
     state
         .db
@@ -241,6 +271,10 @@ pub fn get_history(
             search_regex.unwrap_or(false),
             search_case_sensitive.unwrap_or(false),
             collection_id,
+            active_filter,
+            source_app,
+            time_range,
+            sort_mode,
         )
         .unwrap_or_default()
 }
@@ -252,6 +286,7 @@ pub fn set_clipboard_item(
     kind: String,
     id: Option<i64>,
     html_content: Option<String>,
+    screenshot_id: Option<i64>,
     state: tauri::State<AppState>,
 ) -> Result<(), String> {
     // Mark this content as set by the app to avoid duplication in monitor
@@ -274,6 +309,8 @@ pub fn set_clipboard_item(
         collection_id: None,
         note: None,
         html_content: html_content.clone(),
+        is_snippet: false,
+        screenshot_id,
     };
 
     // Write to clipboard
@@ -316,7 +353,7 @@ pub fn set_clipboard_item(
     // Update Tray
     let history = state
         .db
-        .get_history(1, 20, None, false, false, None)
+        .get_history(1, 20, None, false, false, None, None, None, None, None)
         .unwrap_or_default();
     if let Err(e) = update_tray_menu(&app, &history) {
         log::error!("Failed to update tray menu: {}", e);
@@ -324,6 +361,56 @@ pub fn set_clipboard_item(
 
     log::info!("Clipboard item set successfully");
     Ok(())
+}
+
+/// Add an item to history without writing to clipboard (e.g., file-only screenshot save)
+#[tauri::command]
+pub fn add_to_history(
+    app: tauri::AppHandle,
+    content: String,
+    kind: String,
+    state: tauri::State<AppState>,
+) -> Result<i64, String> {
+    let data_type = classify_content(&content);
+    let item = ClipboardItem {
+        id: None,
+        content,
+        kind,
+        timestamp: Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+        is_sensitive: false,
+        is_pinned: false,
+        source_app: None,
+        data_type,
+        collection_id: None,
+        note: None,
+        html_content: None,
+        is_snippet: false,
+        screenshot_id: None,
+    };
+
+    let max_size = state.config.lock().unwrap().max_history_size;
+    match state.db.insert_item(&item, max_size) {
+        Ok(_pruned) => {
+            // Update Tray
+            let history = state
+                .db
+                .get_history(1, 20, None, false, false, None, None, None, None, None)
+                .unwrap_or_default();
+            if let Err(e) = update_tray_menu(&app, &history) {
+                log::error!("Failed to update tray menu: {}", e);
+            }
+            // Return the ID of the inserted item
+            let items = state
+                .db
+                .get_history(1, 1, None, false, false, None, None, None, None, None)
+                .unwrap_or_default();
+            Ok(items.first().and_then(|i| i.id).unwrap_or(0))
+        }
+        Err(e) => {
+            log::error!("Failed to insert item into DB: {}", e);
+            Err(e.to_string())
+        }
+    }
 }
 
 #[tauri::command]
@@ -357,7 +444,7 @@ pub fn delete_item(
     // Update Tray
     let history = state
         .db
-        .get_history(1, 20, None, false, false, None)
+        .get_history(1, 20, None, false, false, None, None, None, None, None)
         .unwrap_or_default();
     if let Err(e) = update_tray_menu(&app, &history) {
         log::error!("Failed to update tray menu after delete: {}", e);
@@ -393,6 +480,20 @@ pub fn toggle_pin(state: tauri::State<AppState>, index: usize) -> Result<bool, S
         }
         Err(e) => {
             log::error!("Failed to toggle pin state: {}", e);
+            Err(e.to_string())
+        }
+    }
+}
+
+#[tauri::command]
+pub fn toggle_snippet(state: tauri::State<AppState>, id: i64) -> Result<bool, String> {
+    match state.db.toggle_snippet(id) {
+        Ok(new_state) => {
+            log::info!("Toggled snippet state for item {} to {}", id, new_state);
+            Ok(new_state)
+        }
+        Err(e) => {
+            log::error!("Failed to toggle snippet state: {}", e);
             Err(e.to_string())
         }
     }
@@ -456,6 +557,28 @@ pub fn clear_history(app: tauri::AppHandle, state: tauri::State<AppState>) -> Re
     Ok(())
 }
 
+// ---- Rule Engine Commands ----
+
+#[tauri::command]
+pub fn get_rules(state: tauri::State<AppState>) -> Vec<Rule> {
+    state.rules_engine.get_rules()
+}
+
+#[tauri::command]
+pub fn add_rule(state: tauri::State<AppState>, rule: Rule) -> Result<(), String> {
+    state.rules_engine.add_rule(rule)
+}
+
+#[tauri::command]
+pub fn update_rule(state: tauri::State<AppState>, rule: Rule) -> Result<(), String> {
+    state.rules_engine.update_rule(rule)
+}
+
+#[tauri::command]
+pub fn delete_rule(state: tauri::State<AppState>, id: String) -> Result<(), String> {
+    state.rules_engine.delete_rule(&id)
+}
+
 #[tauri::command]
 pub fn get_config(state: tauri::State<AppState>) -> AppConfig {
     let config = state.config.lock().unwrap();
@@ -473,12 +596,21 @@ pub fn save_config(
     compact_mode: bool,
     clear_pinned_on_clear: bool,
     clear_collected_on_clear: bool,
+    screenshot_shortcut: String,
+    screenshot_format: String,
+    screenshot_quality: u8,
+    screenshot_save_action: String,
     state: tauri::State<AppState>,
 ) -> Result<(), String> {
-    let old_shortcut = {
+    let (old_shortcut, old_screenshot_shortcut) = {
         let config = state.config.lock().unwrap();
-        config.shortcut.clone()
+        (config.shortcut.clone(), config.screenshot_shortcut.clone())
     };
+
+    // Conflict check: popup and screenshot shortcuts must not be the same
+    if !screenshot_shortcut.is_empty() && shortcut == screenshot_shortcut {
+        return Err("Popup shortcut and screenshot shortcut cannot be the same.".to_string());
+    }
 
     let new_config = AppConfig {
         shortcut: shortcut.clone(),
@@ -489,6 +621,10 @@ pub fn save_config(
         compact_mode,
         clear_pinned_on_clear,
         clear_collected_on_clear,
+        screenshot_shortcut: screenshot_shortcut.clone(),
+        screenshot_format: screenshot_format.clone(),
+        screenshot_quality,
+        screenshot_save_action: screenshot_save_action.clone(),
     };
 
     // Save to file
@@ -511,6 +647,19 @@ pub fn save_config(
         let _ = shortcut_manager.unregister(old_shortcut.as_str());
         if let Err(e) = shortcut_manager.register(shortcut.as_str()) {
             log::error!("Failed to register new shortcut: {}", e);
+        }
+    }
+
+    // Update screenshot shortcut if changed
+    if screenshot_shortcut != old_screenshot_shortcut {
+        let shortcut_manager = app.global_shortcut();
+        if !old_screenshot_shortcut.is_empty() {
+            let _ = shortcut_manager.unregister(old_screenshot_shortcut.as_str());
+        }
+        if !screenshot_shortcut.is_empty() {
+            if let Err(e) = shortcut_manager.register(screenshot_shortcut.as_str()) {
+                log::error!("Failed to register screenshot shortcut: {}", e);
+            }
         }
     }
 
@@ -537,6 +686,14 @@ pub fn get_paused(state: tauri::State<AppState>) -> bool {
 #[tauri::command]
 pub fn get_item_content(state: tauri::State<AppState>, id: i64) -> Result<String, String> {
     state.db.get_item_content(id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_item_by_id(
+    state: tauri::State<AppState>,
+    id: i64,
+) -> Result<Option<ClipboardItem>, String> {
+    state.db.get_item_by_id(id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -570,8 +727,28 @@ pub fn set_item_collection(
 }
 
 #[tauri::command]
-pub fn get_history_count(state: tauri::State<AppState>) -> usize {
-    state.db.count_history().unwrap_or(0)
+pub fn get_history_count(
+    state: tauri::State<AppState>,
+    query: Option<String>,
+    search_regex: Option<bool>,
+    search_case_sensitive: Option<bool>,
+    collection_id: Option<i64>,
+    active_filter: Option<String>,
+    source_app: Option<String>,
+    time_range: Option<String>,
+) -> usize {
+    state
+        .db
+        .count_history_filtered(
+            query,
+            search_regex.unwrap_or(false),
+            search_case_sensitive.unwrap_or(false),
+            collection_id,
+            active_filter,
+            source_app,
+            time_range,
+        )
+        .unwrap_or(0)
 }
 
 #[tauri::command]
@@ -611,16 +788,16 @@ pub fn check_screen_recording_permission() -> bool {
 #[tauri::command]
 pub async fn cleanup_temp_files(state: tauri::State<'_, AppState>) -> Result<(), String> {
     let file_manager = state.file_manager.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        file_manager.delete_all_temp_files()
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(move || file_manager.delete_all_temp_files())
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 /// 清理过期的临时文件（超过 24 小时）
 #[tauri::command]
-pub async fn cleanup_expired_temp_files(state: tauri::State<'_, AppState>) -> Result<usize, String> {
+pub async fn cleanup_expired_temp_files(
+    state: tauri::State<'_, AppState>,
+) -> Result<usize, String> {
     let file_manager = state.file_manager.clone();
     tauri::async_runtime::spawn_blocking(move || {
         file_manager.cleanup_expired_files(std::time::Duration::from_secs(24 * 3600))
@@ -638,5 +815,9 @@ pub fn get_temp_file_count(state: tauri::State<AppState>) -> usize {
 /// 获取临时目录路径
 #[tauri::command]
 pub fn get_temp_directory(state: tauri::State<AppState>) -> String {
-    state.file_manager.get_temp_dir().to_string_lossy().to_string()
+    state
+        .file_manager
+        .get_temp_dir()
+        .to_string_lossy()
+        .to_string()
 }

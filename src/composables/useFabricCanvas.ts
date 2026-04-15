@@ -1,4 +1,6 @@
 /**
+ * SCREENSHOT MAINLINE — Annotation Composable
+ *
  * Fabric.js v7 Canvas Composable
  * 用于截图工具的绘图功能
  *
@@ -12,7 +14,7 @@
  * - 只能通过描边/填充选中
  * - 禁用缩放，只允许移动
  */
-import { ref, onUnmounted, toRaw, markRaw, type Ref } from "vue";
+import { ref, onUnmounted, toRaw, markRaw, type Ref } from 'vue';
 import {
   Canvas,
   FabricImage,
@@ -21,20 +23,17 @@ import {
   Circle,
   type TPointerEvent,
   type TPointerEventInfo,
-} from "fabric";
+} from 'fabric';
 
 // 引入图形系统
-import {
-  ShapeRegistry,
-  type ShapeType,
-  type ShapePath,
-  type ControlCircle,
-} from "./shapes";
-import "./shapes/rectHandler";
-import "./shapes/ellipseHandler";
-import "./shapes/arrowHandler";
-import "./shapes/penHandler";
-import "./shapes/textHandler";
+import { ShapeRegistry, type ShapeType, type ShapePath, type ControlCircle } from './shapes';
+import './shapes/rectHandler';
+import './shapes/ellipseHandler';
+import './shapes/arrowHandler';
+import './shapes/penHandler';
+import './shapes/textHandler';
+import './shapes/blurHandler';
+import './shapes/mosaicHandler';
 
 // 可绘制对象类型
 export type DrawableObject = ShapePath;
@@ -51,9 +50,9 @@ export interface DrawingConfig {
 
 // 默认绘图配置
 const defaultDrawingConfig: DrawingConfig = {
-  strokeColor: "#ff0000",
+  strokeColor: '#ff0000',
   strokeWidth: 3,
-  fillColor: "transparent",
+  fillColor: 'transparent',
 };
 
 // 历史记录项
@@ -99,7 +98,7 @@ export function useFabricCanvas(config: Partial<DrawingConfig> = {}) {
     }
 
     // 2. 如果当前是 'text' 工具，且没有点击到任何对象 -> 创建新文本
-    if (activeTool.value === "text") {
+    if (activeTool.value === 'text') {
       // 继续下方的绘制逻辑
     } else {
       // 如果是其他工具，且 opt.target 已经过滤了，说明点击了空白处 -> 开始绘制
@@ -137,7 +136,7 @@ export function useFabricCanvas(config: Partial<DrawingConfig> = {}) {
     const clampedY = Math.max(0, Math.min(pointer.y, canvas.height || 0));
     const clampedPointer = { x: clampedX, y: clampedY };
 
-    if (activeTool.value === "pen") {
+    if (activeTool.value === 'pen') {
       penPoints.value.push(clampedPointer);
     }
 
@@ -174,13 +173,10 @@ export function useFabricCanvas(config: Partial<DrawingConfig> = {}) {
     isDrawing.value = false;
 
     // 如果还没有创建对象（例如只有点击没有拖动），且是文本工具，则在这里创建
-    if (!currentObject.value && activeTool.value === "text") {
-      const handler = ShapeRegistry.getHandler("text");
+    if (!currentObject.value && activeTool.value === 'text') {
+      const handler = ShapeRegistry.getHandler('text');
       if (handler) {
-        const data = handler.createData(
-          drawStartPoint.value,
-          drawStartPoint.value,
-        );
+        const data = handler.createData(drawStartPoint.value, drawStartPoint.value);
         if (data) {
           const newObject = handler.createPath(data, drawingConfig);
           (newObject as ShapePath).shapeData = data;
@@ -196,9 +192,7 @@ export function useFabricCanvas(config: Partial<DrawingConfig> = {}) {
 
     if (currentObject.value) {
       // 启用交互，允许选择和移动，但禁用缩放和边框
-      const isText =
-        currentObject.value.type === "i-text" ||
-        currentObject.value.type === "text";
+      const isText = currentObject.value.type === 'i-text' || currentObject.value.type === 'text';
 
       currentObject.value.set({
         selectable: true,
@@ -209,11 +203,11 @@ export function useFabricCanvas(config: Partial<DrawingConfig> = {}) {
         lockScalingY: !isText,
         perPixelTargetFind: !isText, // 文本关闭像素级检测，便于点击
         strokeDashArray: isText ? undefined : [5, 5], // 文本使用 border，其他使用 strokeDashArray
-        hoverCursor: "move", // 设置悬停光标为移动
+        hoverCursor: 'move', // 设置悬停光标为移动
         // 修正：确保文本颜色正确应用
-        fill: isText ? drawingConfig.strokeColor : "transparent",
+        fill: isText ? drawingConfig.strokeColor : 'transparent',
         // 文本边框样式 (仿微信虚线框)
-        borderColor: isText ? "#999999" : "transparent",
+        borderColor: isText ? '#999999' : 'transparent',
         borderDashArray: [4, 4],
         padding: 5,
         transparentCorners: false, // 填充控制点
@@ -223,10 +217,7 @@ export function useFabricCanvas(config: Partial<DrawingConfig> = {}) {
       canvas.setActiveObject(currentObject.value as FabricObject);
 
       // 特殊处理：如果是文本，创建后自动进入编辑状态
-      if (
-        currentObject.value.type === "i-text" ||
-        currentObject.value.type === "text"
-      ) {
+      if (currentObject.value.type === 'i-text' || currentObject.value.type === 'text') {
         (currentObject.value as any).enterEditing();
       }
 
@@ -252,7 +243,7 @@ export function useFabricCanvas(config: Partial<DrawingConfig> = {}) {
     width: number,
     height: number,
     cssWidth?: number,
-    cssHeight?: number,
+    cssHeight?: number
   ): Canvas => {
     // 如果已存在，先销毁
     if (fabricCanvas.value) {
@@ -272,25 +263,22 @@ export function useFabricCanvas(config: Partial<DrawingConfig> = {}) {
     });
 
     if (cssWidth !== undefined && cssHeight !== undefined) {
-      canvas.setDimensions(
-        { width: cssWidth, height: cssHeight },
-        { cssOnly: true },
-      );
+      canvas.setDimensions({ width: cssWidth, height: cssHeight }, { cssOnly: true });
     }
 
     fabricCanvas.value = canvas;
 
     // 绑定绘图事件
-    canvas.on("mouse:down", handleMouseDown);
-    canvas.on("mouse:move", handleMouseMove);
-    canvas.on("mouse:up", handleMouseUp);
+    canvas.on('mouse:down', handleMouseDown);
+    canvas.on('mouse:move', handleMouseMove);
+    canvas.on('mouse:up', handleMouseUp);
 
     // 监听 Mouse down 以记录对象初始位置（用于移动计算）
-    canvas.on("mouse:down", (e) => {
+    canvas.on('mouse:down', (e) => {
       const target = e.target;
       if (
         target &&
-        !target.isType("activeSelection") &&
+        !target.isType('activeSelection') &&
         !(target as ControlCircle).isControlPoint
       ) {
         // 确保使用最新的坐标
@@ -300,17 +288,14 @@ export function useFabricCanvas(config: Partial<DrawingConfig> = {}) {
         // 确保控制点已创建（如果是直接拖动而不是先点击选中再拖动的情况）
         const shape = target as ShapePath;
         // 使用 toRaw 比较
-        if (
-          shape.shapeData &&
-          toRaw(controlPoints.value.shape) !== toRaw(shape)
-        ) {
+        if (shape.shapeData && toRaw(controlPoints.value.shape) !== toRaw(shape)) {
           createControlPoints(shape);
         }
       }
     });
 
     // 监听对象移动事件，更新 shapeData 和控制点
-    canvas.on("object:moving", (e) => {
+    canvas.on('object:moving', (e) => {
       const obj = e.target as ShapePath;
       // 如果没有 lastObjectPosition，可能是因为 mouse:down 没捕获到，或者这是一个新选中的对象被拖动
       if (!obj || !obj.shapeData) return;
@@ -345,9 +330,9 @@ export function useFabricCanvas(config: Partial<DrawingConfig> = {}) {
     // 监听对象修改事件，用于保存历史
 
     // 监听文本修改，同步回 shapeData，并且更新尺寸以便控制点跟随
-    canvas.on("text:changed", (e) => {
+    canvas.on('text:changed', (e) => {
       const target = e.target as ShapePath;
-      if (target && target.shapeData && target.shapeData.type === "text") {
+      if (target && target.shapeData && target.shapeData.type === 'text') {
         (target.shapeData as any).text = (target as any).text;
 
         // 更新尺寸到 shapeData，以便 control points 能够获取真实尺寸
@@ -359,13 +344,10 @@ export function useFabricCanvas(config: Partial<DrawingConfig> = {}) {
     });
 
     // 监听对象修改（缩放、移动等）
-    canvas.on("object:modified", (e) => {
-      if (
-        e.target &&
-        (e.target.type === "i-text" || e.target.type === "text")
-      ) {
+    canvas.on('object:modified', (e) => {
+      if (e.target && (e.target.type === 'i-text' || e.target.type === 'text')) {
         const target = e.target as ShapePath;
-        if (target.shapeData && target.shapeData.type === "text") {
+        if (target.shapeData && target.shapeData.type === 'text') {
           (target.shapeData as any).text = (target as any).text;
 
           // 确保位置和尺寸同步
@@ -389,14 +371,14 @@ export function useFabricCanvas(config: Partial<DrawingConfig> = {}) {
         // 忽略控制点
         if ((obj as ControlCircle).isControlPoint) return;
 
-        if (obj.type === "i-text" || obj.type === "text") {
+        if (obj.type === 'i-text' || obj.type === 'text') {
           // 文本对象显示边框
           obj.set({
             hasBorders: true,
-            borderColor: "#999999", // Gray - matching WeChat
+            borderColor: '#999999', // Gray - matching WeChat
             borderDashArray: [4, 4],
-            cornerColor: "#ffffff", // Show native handles
-            cornerStrokeColor: "#999999",
+            cornerColor: '#ffffff', // Show native handles
+            cornerStrokeColor: '#999999',
             transparentCorners: false,
             hasControls: true, // Enable native controls
             padding: 5,
@@ -404,19 +386,26 @@ export function useFabricCanvas(config: Partial<DrawingConfig> = {}) {
             lockScalingX: false, // Allow scaling
             lockScalingY: false,
           });
+        } else if (obj.type === 'image') {
+          // 图像类型（blur/mosaic）使用边框显示选中状态
+          obj.set({
+            hasBorders: true,
+            borderColor: '#999999',
+            borderDashArray: [4, 4],
+            padding: 2,
+            borderScaleFactor: 1,
+          });
         } else {
           // 其他图形（如矩形、箭头）使用自身线条虚线化
           obj.set({ strokeDashArray: [5, 5] });
         }
 
         // 对于文本，我们在这里也更新一下 shapeData 里的尺寸，以防万一
-        if (obj.type === "i-text" || obj.type === "text") {
+        if (obj.type === 'i-text' || obj.type === 'text') {
           const target = obj as ShapePath;
-          if (target.shapeData && target.shapeData.type === "text") {
+          if (target.shapeData && target.shapeData.type === 'text') {
             (target.shapeData as any).width = (target as any).getScaledWidth();
-            (target.shapeData as any).height = (
-              target as any
-            ).getScaledHeight();
+            (target.shapeData as any).height = (target as any).getScaledHeight();
           }
         }
 
@@ -434,10 +423,15 @@ export function useFabricCanvas(config: Partial<DrawingConfig> = {}) {
 
         obj.set({ strokeDashArray: undefined });
 
+        // 图像类型移除边框
+        if (obj.type === 'image') {
+          obj.set({ hasBorders: false, borderDashArray: undefined });
+        }
+
         // 检查是否是空文本，如果是则移除
-        if (obj.type === "i-text" || obj.type === "text") {
+        if (obj.type === 'i-text' || obj.type === 'text') {
           const textObj = obj as any;
-          if (!textObj.text || textObj.text.trim() === "") {
+          if (!textObj.text || textObj.text.trim() === '') {
             canvas.remove(obj);
           }
         }
@@ -446,12 +440,12 @@ export function useFabricCanvas(config: Partial<DrawingConfig> = {}) {
       removeControlPoints();
     };
 
-    canvas.on("selection:created", (e) => {
+    canvas.on('selection:created', (e) => {
       handleSelected(e.selected || []);
       canvas.renderAll();
     });
 
-    canvas.on("selection:updated", (e) => {
+    canvas.on('selection:updated', (e) => {
       const selectedObject = e.selected?.[0];
       // 如果新选中的是控制点，说明用户正在操作控制点
       // 此时不应该清除图形的选中状态（虚线）和控制点本身
@@ -464,7 +458,7 @@ export function useFabricCanvas(config: Partial<DrawingConfig> = {}) {
       canvas.renderAll();
     });
 
-    canvas.on("selection:cleared", (e) => {
+    canvas.on('selection:cleared', (e) => {
       handleDeselected(e.deselected || []);
       canvas.renderAll();
     });
@@ -481,7 +475,7 @@ export function useFabricCanvas(config: Partial<DrawingConfig> = {}) {
     // 设置画布光标
     if (fabricCanvas.value) {
       // 如果有选中的工具，光标设为十字；否则设为默认
-      fabricCanvas.value.defaultCursor = tool ? "crosshair" : "default";
+      fabricCanvas.value.defaultCursor = tool ? 'crosshair' : 'default';
 
       // 切换工具时取消选中
       if (tool) {
@@ -494,9 +488,7 @@ export function useFabricCanvas(config: Partial<DrawingConfig> = {}) {
   /**
    * 设置背景图像
    */
-  const setBackgroundImage = async (
-    imageDataUrl: string,
-  ): Promise<FabricImage | null> => {
+  const setBackgroundImage = async (imageDataUrl: string): Promise<FabricImage | null> => {
     const canvas = fabricCanvas.value;
     if (!canvas) return null;
 
@@ -507,15 +499,15 @@ export function useFabricCanvas(config: Partial<DrawingConfig> = {}) {
       img.set({
         left: 0,
         top: 0,
-        originX: "left",
-        originY: "top",
+        originX: 'left',
+        originY: 'top',
       });
 
       canvas.backgroundImage = img;
       canvas.renderAll();
       return img;
     } catch (e) {
-      console.error("Failed to set background image:", e);
+      console.error('Failed to set background image:', e);
       return null;
     }
   };
@@ -549,16 +541,16 @@ export function useFabricCanvas(config: Partial<DrawingConfig> = {}) {
         left: pos.x,
         top: pos.y,
         radius: def.style?.radius || 6,
-        fill: def.style?.fill || "#ffffff",
-        stroke: def.style?.stroke || "#0066ff",
+        fill: def.style?.fill || '#ffffff',
+        stroke: def.style?.stroke || '#0066ff',
         strokeWidth: def.style?.strokeWidth || 2,
-        originX: "center",
-        originY: "center",
+        originX: 'center',
+        originY: 'center',
         selectable: true,
         hasControls: false,
         hasBorders: false,
         evented: true,
-        hoverCursor: "pointer", // 鼠标悬停时显示手型
+        hoverCursor: 'pointer', // 鼠标悬停时显示手型
         padding: 5, // 增加点击热区，防止太难点击
       }) as ControlCircle;
 
@@ -566,7 +558,7 @@ export function useFabricCanvas(config: Partial<DrawingConfig> = {}) {
       control.pointId = def.id;
 
       // 绑定移动事件
-      control.on("moving", () => {
+      control.on('moving', () => {
         updateShapeFromControl(shape, control, def);
       });
 
@@ -590,7 +582,7 @@ export function useFabricCanvas(config: Partial<DrawingConfig> = {}) {
   const updateShapeFromControl = (
     shape: ShapePath,
     control: ControlCircle,
-    def: any, // ControlPointDef
+    def: any // ControlPointDef
   ) => {
     const canvas = fabricCanvas.value;
     if (!canvas || !shape.shapeData) return;
@@ -607,15 +599,31 @@ export function useFabricCanvas(config: Partial<DrawingConfig> = {}) {
 
     // 重新生成 Path 用于获取新的路径数据
     const tempPath = handler.createPath(newData, {
-      strokeColor: (shape.stroke as string) || "#000000",
+      strokeColor: (shape.stroke as string) || '#000000',
       strokeWidth: shape.strokeWidth || 1,
-      fillColor: (shape.fill as string) || "transparent",
+      fillColor: (shape.fill as string) || 'transparent',
     });
 
     // 更新现有对象的路径属性
     // Fabric.js 的 set 方法会自动通知更新，但 Path 的 path 数据需要特别处理
     // 注意：只要是 Paths 类型的图形，才会有 path 属性。Text没有。
-    if ("path" in tempPath) {
+    if (tempPath.type === 'image') {
+      // 图像类型（blur/mosaic）：原地更新图像内容和位置
+      shape.shapeData = newData;
+      const tempImg = tempPath as FabricImage;
+      const shapeImg = shape as unknown as FabricImage;
+      // 更新图像元素和位置
+      shapeImg.setElement(tempImg.getElement());
+      shapeImg.set({
+        left: tempImg.left,
+        top: tempImg.top,
+        width: tempImg.width,
+        height: tempImg.height,
+      });
+      updateAllControlPoints(shape);
+      canvas.renderAll();
+      return;
+    } else if ('path' in tempPath) {
       shape.set({
         path: (tempPath as any).path,
         left: tempPath.left,
@@ -624,7 +632,7 @@ export function useFabricCanvas(config: Partial<DrawingConfig> = {}) {
         height: tempPath.height,
         pathOffset: (tempPath as any).pathOffset,
       });
-    } else if (shape.type === "i-text" || shape.type === "text") {
+    } else if (shape.type === 'i-text' || shape.type === 'text') {
       // 文本特殊处理：同步字号和位置，但保留文本内容
       // 如果我们仅仅使用 newData 创建 tempPath，它包含的是初始 "Text"
       // 我们不应该覆盖用户已输入的 text
@@ -636,7 +644,7 @@ export function useFabricCanvas(config: Partial<DrawingConfig> = {}) {
       });
       // 必须立刻更新 shapeData 的 width/height，否则 updateAllControlPoints 会使用过期的尺寸
       // 导致控制点闪烁或无法拖动
-      if (shape.shapeData && shape.shapeData.type === "text") {
+      if (shape.shapeData && shape.shapeData.type === 'text') {
         const t = shape as any;
         // IText 更新属性后可能需要 updateCoords 才能获取正确尺寸，set 内部应该调用了
         // 但为了保险，强制 updateCoords (Fabric V5/V6)
@@ -675,14 +683,11 @@ export function useFabricCanvas(config: Partial<DrawingConfig> = {}) {
     ) {
       // 这里的 mismatch 通常是因为 Vue 的 reactivity system 包装了对象
       // 如果使用了 toRaw 还是不匹配，那才是真的不匹配
-      if (
-        controlPoints.value.shape &&
-        toRaw(controlPoints.value.shape) !== toRaw(shape)
-      ) {
+      if (controlPoints.value.shape && toRaw(controlPoints.value.shape) !== toRaw(shape)) {
         console.warn(
-          "Shape mismatch in updateAllControlPoints",
+          'Shape mismatch in updateAllControlPoints',
           toRaw(shape),
-          toRaw(controlPoints.value.shape),
+          toRaw(controlPoints.value.shape)
         );
       }
       return;
@@ -776,7 +781,7 @@ export function useFabricCanvas(config: Partial<DrawingConfig> = {}) {
     // 导出画布状态
     // Include 'shapeData' to persist editability
     // Include 'isControlPoint' to identify and remove UI controls
-    const state = canvas.toObject(["shapeData", "isControlPoint"]);
+    const state = canvas.toObject(['shapeData', 'isControlPoint']);
 
     // 过滤掉控制点，不要保存到历史记录中
     state.objects = state.objects.filter((obj: any) => !obj.isControlPoint);
@@ -845,9 +850,9 @@ export function useFabricCanvas(config: Partial<DrawingConfig> = {}) {
   /**
    * 导出为 DataURL
    */
-  const toDataURL = (format: "png" | "jpeg" = "png", quality = 1): string => {
+  const toDataURL = (format: 'png' | 'jpeg' = 'png', quality = 1): string => {
     const canvas = fabricCanvas.value;
-    if (!canvas) return "";
+    if (!canvas) return '';
 
     // 临时隐藏控制点，防止导出时包含它们
     // 虽然控制点一般不应该在截图里，但以防万一
@@ -877,9 +882,9 @@ export function useFabricCanvas(config: Partial<DrawingConfig> = {}) {
     const activeObject = fabricCanvas.value?.getActiveObject();
     if (activeObject) {
       // 文本使用 fill，其他使用 stroke
-      if (activeObject.type === "i-text" || activeObject.type === "text") {
+      if (activeObject.type === 'i-text' || activeObject.type === 'text') {
         const isEditing = (activeObject as any).isEditing;
-        activeObject.set("fill", color);
+        activeObject.set('fill', color);
         // 如果正在编辑，保持编辑状态（解决点击颜色按钮导致失去焦点的问题）
         if (isEditing) {
           // Fabric 更新样式后可能会重置光标位置，这是正常行为，但我们需要保持 focus
@@ -893,13 +898,13 @@ export function useFabricCanvas(config: Partial<DrawingConfig> = {}) {
            */
         }
       } else {
-        activeObject.set("stroke", color);
+        activeObject.set('stroke', color);
       }
       fabricCanvas.value?.renderAll();
 
       // 强制刷新 activeObject 状态
       // 如果是文本且之前在编辑，尝试恢复焦点
-      if (activeObject.type === "i-text" && (activeObject as any).isEditing) {
+      if (activeObject.type === 'i-text' && (activeObject as any).isEditing) {
         // (activeObject as any).hiddenTextarea?.focus(); // 这通常由 Fabric 内部管理
       }
       saveHistory();
@@ -914,13 +919,13 @@ export function useFabricCanvas(config: Partial<DrawingConfig> = {}) {
 
     const activeObject = fabricCanvas.value?.getActiveObject();
     if (activeObject) {
-      if (activeObject.type === "i-text" || activeObject.type === "text") {
+      if (activeObject.type === 'i-text' || activeObject.type === 'text') {
         // 粗细同时也影响字号，模拟微信截图体验
         // 假设 width 是 1, 3, 5 等级
         const baseSize = 16;
-        activeObject.set("fontSize", baseSize + (width - 1) * 4);
+        activeObject.set('fontSize', baseSize + (width - 1) * 4);
       } else {
-        activeObject.set("strokeWidth", width);
+        activeObject.set('strokeWidth', width);
       }
       fabricCanvas.value?.renderAll();
       saveHistory();

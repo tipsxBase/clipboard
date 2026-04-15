@@ -21,7 +21,7 @@ sidebar_position: 4
 在开始之前，请确保您的开发环境已安装以下工具：
 
 1.  **Rust**: 请通过 [rustup](https://rustup.rs/) 安装最新稳定版。
-2.  **Node.js**: 推荐 v18 或更高版本。
+2.  **Node.js**: 推荐 v20 或更高版本。
 3.  **pnpm**: 包管理工具 (`npm install -g pnpm`)。
 4.  **系统依赖**:
     - **macOS**: 需要安装 Xcode Command Line Tools (`xcode-select --install`)。
@@ -36,13 +36,18 @@ sidebar_position: 4
     cd clipboard
     ```
 
+2.  **安装依赖**
+
+    ```bash
+    pnpm install
     ```
 
-    ```
+3.  **启动开发模式**
 
-2.  **启动开发模式**
-    ```
+    此命令将同时启动前端开发服务器和 Tauri 后端，并启用热重载。
 
+    ```bash
+    pnpm tauri dev
     ```
 
 ## 构建发布

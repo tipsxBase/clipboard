@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, watch, onUnmounted } from "vue";
-import { readFile } from "@tauri-apps/plugin-fs";
+import { ref, watch, onUnmounted } from 'vue';
+import { convertFileSrc } from '@tauri-apps/api/core';
 
 const props = defineProps<{
   src: string;
@@ -8,24 +8,24 @@ const props = defineProps<{
   class?: string;
 }>();
 
-const imageUrl = ref("");
+const imageUrl = ref('');
 const error = ref(false);
 
 async function loadImage() {
   if (!props.src) {
-    imageUrl.value = "";
+    imageUrl.value = '';
     return;
   }
 
   // Revoke previous URL if exists
-  if (imageUrl.value && imageUrl.value.startsWith("blob:")) {
+  if (imageUrl.value && imageUrl.value.startsWith('blob:')) {
     URL.revokeObjectURL(imageUrl.value);
   }
 
   // Check if it's a path or base64
   // If it starts with / or X:\, it's a path.
   // Otherwise assume base64 (legacy support or small images if logic changes)
-  const isPath = props.src.startsWith("/") || props.src.match(/^[a-zA-Z]:\\/);
+  const isPath = props.src.startsWith('/') || props.src.match(/^[a-zA-Z]:\\/);
 
   if (!isPath) {
     // Assume base64
@@ -35,12 +35,10 @@ async function loadImage() {
   }
 
   try {
-    const bytes = await readFile(props.src);
-    const blob = new Blob([bytes]);
-    imageUrl.value = URL.createObjectURL(blob);
+    imageUrl.value = convertFileSrc(props.src);
     error.value = false;
   } catch (e) {
-    console.error("Failed to load image:", props.src, e);
+    console.error('Failed to load image:', props.src, e);
     error.value = true;
   }
 }
@@ -48,7 +46,7 @@ async function loadImage() {
 watch(() => props.src, loadImage, { immediate: true });
 
 onUnmounted(() => {
-  if (imageUrl.value && imageUrl.value.startsWith("blob:")) {
+  if (imageUrl.value && imageUrl.value.startsWith('blob:')) {
     URL.revokeObjectURL(imageUrl.value);
   }
 });
@@ -60,13 +58,11 @@ onUnmounted(() => {
     :src="imageUrl"
     :alt="alt"
     :class="props.class"
+    @error="error = true"
   />
   <div
     v-else
-    :class="[
-      props.class,
-      'bg-muted/50 flex items-center justify-center text-muted-foreground',
-    ]"
+    :class="[props.class, 'bg-muted/50 flex items-center justify-center text-muted-foreground']"
   >
     <span class="text-xs">Image Error</span>
   </div>

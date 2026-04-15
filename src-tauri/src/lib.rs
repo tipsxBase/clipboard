@@ -5,18 +5,20 @@ mod file_manager;
 mod models;
 mod monitor;
 mod ocr;
+mod rules;
 mod screenshot;
 mod state;
+mod storage_paths;
 mod tray;
 mod utils;
 
 use clipboard_master::Master;
 use std::fs;
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use tauri::tray::TrayIconBuilder;
 use tauri::{Emitter, Manager};
+use tauri_plugin_global_shortcut::GlobalShortcutExt;
 #[cfg(target_os = "macos")]
 use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
 
@@ -27,33 +29,35 @@ use crate::file_manager::FileManager;
 use crate::models::{AppConfig, ClipboardItem};
 use crate::monitor::ClipboardMonitor;
 use crate::state::AppState;
+use crate::storage_paths::StoragePaths;
 use crate::utils::write_to_clipboard;
 use tauri_plugin_updater::UpdaterExt;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // Load config first
-    let app_data_dir = std::env::var("HOME")
-        .map(|h| PathBuf::from(h).join(".clipboard-manager"))
-        .unwrap_or_else(|_| PathBuf::from(".clipboard-manager"));
+    // Initialize unified storage paths
+    let storage_paths = StoragePaths::new();
+    storage_paths
+        .ensure_dirs()
+        .expect("Failed to create storage directories");
 
-    if !app_data_dir.exists() {
-        let _ = fs::create_dir_all(&app_data_dir);
-    }
-
-    let config_path = app_data_dir.join("config.json");
+    let config_path = storage_paths.config_path();
     let config = if let Ok(content) = fs::read_to_string(&config_path) {
         serde_json::from_str::<AppConfig>(&content).unwrap_or_default()
     } else {
         AppConfig::default()
     };
 
-    let db_path = app_data_dir.join("history.db");
-    let key_path = app_data_dir.join("secret.key");
+    let db_path = storage_paths.db_path();
+    let key_path = storage_paths.key_path();
     let crypto = Arc::new(Crypto::new(&key_path));
     let db = Arc::new(Database::new(&db_path, crypto).expect("Failed to initialize database"));
 
+    let rules_path = storage_paths.rules_path();
+    let rules_engine = Arc::new(rules::RulesEngine::new(&rules_path));
+
     let shortcut_key = config.shortcut.clone();
+    let screenshot_shortcut_key = config.screenshot_shortcut.clone();
     let config_arc = Arc::new(Mutex::new(config));
 
     let is_paused = Arc::new(Mutex::new(false));
@@ -70,87 +74,7 @@ pub fn run() {
     let current_captures_state = current_captures.clone();
 
     tauri::Builder::default()
-        .plugin(
-            tauri_plugin_global_shortcut::Builder::new()
-                .with_shortcut(shortcut_key.as_str())
-                .expect("Failed to register shortcut")
-                .with_handler(|app, _shortcut, event| {
-                    if event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed {
-                        // Check Paste Stack
-                        let state = app.state::<AppState>();
-                        if let Ok(mut stack) = state.paste_stack.lock() {
-                            if !stack.is_empty() {
-                                let item = stack.remove(0);
-                                let _ = write_to_clipboard(app, &item);
-                                return;
-                            }
-                        }
-
-                        if let Some(window) = app.get_webview_window("popup") {
-                            let is_visible = window.is_visible().unwrap_or(false);
-                            if is_visible {
-                                let _ = window.hide();
-                            } else {
-                                // Get mouse position
-                                use mouse_position::mouse_position::Mouse;
-                                let position = Mouse::get_mouse_position();
-                                if let Mouse::Position { x, y } = position {
-                                    let mut final_x = x;
-                                    let mut final_y = y;
-                                    log::info!("Mouse Position: ({}, {})", x, y);
-
-                                    if let Ok(monitors) = window.available_monitors() {
-                                        for m in monitors {
-                                            let m_pos = m.position();
-                                            let m_size = m.size();
-                                            let scale = m.scale_factor();
-                                            let x = x * scale as i32;
-                                            let y = y * scale as i32;
-                                            final_x = x;
-                                            final_y = y;
-                                            // Check if mouse is in this monitor
-                                            if x >= m_pos.x
-                                                && x < m_pos.x + m_size.width as i32
-                                                && y >= m_pos.y
-                                                && y < m_pos.y + m_size.height as i32
-                                            {
-                                                if let Ok(w_size) = window.outer_size() {
-                                                    let w = w_size.width as i32;
-                                                    let h = w_size.height as i32;
-
-                                                    // If window goes off the right edge, shift to left of cursor
-                                                    if x + w > m_pos.x + m_size.width as i32 {
-                                                        final_x = x - w;
-                                                    }
-
-                                                    // If window goes off the bottom edge, shift to above cursor
-                                                    if y + h > m_pos.y + m_size.height as i32 {
-                                                        final_y = y - h;
-                                                    }
-                                                }
-                                                break;
-                                            }
-                                        }
-                                    }
-                                    let _ = window.set_position(tauri::Position::Physical(
-                                        tauri::PhysicalPosition {
-                                            x: final_x,
-                                            y: final_y,
-                                        },
-                                    ));
-                                } else {
-                                    // Fallback to center if mouse position fails
-                                    let _ = window.center();
-                                }
-
-                                let _ = window.show();
-                                let _ = window.set_focus();
-                            }
-                        }
-                    }
-                })
-                .build(),
-        )
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_store::Builder::new().build())
@@ -176,26 +100,10 @@ pub fn run() {
 
             let handle = app.handle().clone();
 
-            // 初始化数据路径
-            let app_data_dir = app.path().app_data_dir()?;
-            if !app_data_dir.exists() {
-                let _ = fs::create_dir_all(&app_data_dir);
-            }
-            let images_dir = app_data_dir.join("images");
-            if !images_dir.exists() {
-                let _ = fs::create_dir_all(&images_dir);
-            }
-
-            // 初始化截图临时目录
-            let screenshot_temp_dir = std::env::temp_dir().join("clipboard-manager-screenshots");
-            if !screenshot_temp_dir.exists() {
-                let _ = fs::create_dir_all(&screenshot_temp_dir);
-            }
-
-            // 初始化文件管理器
+            // 初始化文件管理器（仅管理临时目录）
             let file_manager = Arc::new(
-                FileManager::new(screenshot_temp_dir.clone())
-                    .expect("Failed to initialize file manager")
+                FileManager::new(storage_paths.temp_screenshot_dir().clone())
+                    .expect("Failed to initialize file manager"),
             );
 
             // 启动时清理过期文件（超过 24 小时）
@@ -214,7 +122,119 @@ pub fn run() {
                 current_captures: current_captures_state.clone(),
                 pause_item: Arc::new(Mutex::new(None)),
                 file_manager: file_manager.clone(),
+                storage_paths: Arc::new(storage_paths),
+                rules_engine: rules_engine.clone(),
             });
+
+            // 注册截图快捷键
+            if !screenshot_shortcut_key.is_empty() {
+                let screenshot_handle = handle.clone();
+                let shortcut_manager = app.global_shortcut();
+                if let Err(e) = shortcut_manager.on_shortcut(
+                    screenshot_shortcut_key.as_str(),
+                    move |_app, _shortcut, event| {
+                        if event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed {
+                            let handle = screenshot_handle.clone();
+                            tauri::async_runtime::spawn(async move {
+                                if let Err(e) =
+                                    crate::commands::start_capture(handle.clone(), handle.state())
+                                        .await
+                                {
+                                    log::error!("Screenshot shortcut failed: {}", e);
+                                    let _ = handle.emit("screenshot-error", e);
+                                }
+                            });
+                        }
+                    },
+                ) {
+                    log::warn!("Failed to register screenshot shortcut: {}", e);
+                }
+            }
+
+            // 注册主窗口或弹出窗口快捷键
+            if !shortcut_key.is_empty() {
+                let shortcut_manager = app.global_shortcut();
+                if let Err(e) = shortcut_manager.on_shortcut(
+                    shortcut_key.as_str(),
+                    move |app, _shortcut, event| {
+                        if event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed {
+                            // Check Paste Stack
+                            let state = app.state::<AppState>();
+                            if let Ok(mut stack) = state.paste_stack.lock() {
+                                if !stack.is_empty() {
+                                    let item = stack.remove(0);
+                                    let _ = write_to_clipboard(app, &item);
+                                    return;
+                                }
+                            }
+
+                            if let Some(window) = app.get_webview_window("popup") {
+                                let is_visible = window.is_visible().unwrap_or(false);
+                                if is_visible {
+                                    let _ = window.hide();
+                                } else {
+                                    // Get mouse position
+                                    use mouse_position::mouse_position::Mouse;
+                                    let position = Mouse::get_mouse_position();
+                                    if let Mouse::Position { x, y } = position {
+                                        let mut final_x = x;
+                                        let mut final_y = y;
+                                        log::info!("Mouse Position: ({}, {})", x, y);
+
+                                        if let Ok(monitors) = window.available_monitors() {
+                                            for m in monitors {
+                                                let m_pos = m.position();
+                                                let m_size = m.size();
+                                                let scale = m.scale_factor();
+                                                let x = x * scale as i32;
+                                                let y = y * scale as i32;
+                                                final_x = x;
+                                                final_y = y;
+                                                // Check if mouse is in this monitor
+                                                if x >= m_pos.x
+                                                    && x < m_pos.x + m_size.width as i32
+                                                    && y >= m_pos.y
+                                                    && y < m_pos.y + m_size.height as i32
+                                                {
+                                                    if let Ok(w_size) = window.outer_size() {
+                                                        let w = w_size.width as i32;
+                                                        let h = w_size.height as i32;
+
+                                                        // If window goes off the right edge, shift to left of cursor
+                                                        if x + w > m_pos.x + m_size.width as i32 {
+                                                            final_x = x - w;
+                                                        }
+
+                                                        // If window goes off the bottom edge, shift to above cursor
+                                                        if y + h > m_pos.y + m_size.height as i32 {
+                                                            final_y = y - h;
+                                                        }
+                                                    }
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                        let _ = window.set_position(tauri::Position::Physical(
+                                            tauri::PhysicalPosition {
+                                                x: final_x,
+                                                y: final_y,
+                                            },
+                                        ));
+                                    } else {
+                                        // Fallback to center if mouse position fails
+                                        let _ = window.center();
+                                    }
+
+                                    let _ = window.show();
+                                    let _ = window.set_focus();
+                                }
+                            }
+                        }
+                    },
+                ) {
+                    log::warn!("Failed to register popup shortcut: {}", e);
+                }
+            }
 
             // 托盘设置
             let menu = crate::tray::create_tray_menu(app.handle()).unwrap();
@@ -330,9 +350,11 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_history,
             set_clipboard_item,
+            add_to_history,
             delete_item,
             toggle_sensitive,
             toggle_pin,
+            toggle_snippet,
             update_clipboard_item_content,
             clear_history,
             get_config,
@@ -340,6 +362,7 @@ pub fn run() {
             set_paused,
             get_paused,
             get_item_content,
+            get_item_by_id,
             get_history_count,
             create_collection,
             get_collections,
@@ -354,7 +377,12 @@ pub fn run() {
             cleanup_temp_files,
             cleanup_expired_temp_files,
             get_temp_file_count,
-            get_temp_directory
+            get_temp_directory,
+            check_screen_recording_permission,
+            get_rules,
+            add_rule,
+            update_rule,
+            delete_rule,
         ])
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::CloseRequested { api, .. } => {

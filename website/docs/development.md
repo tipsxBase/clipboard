@@ -10,6 +10,12 @@ If you are a developer and want to contribute code to this project or build it y
 
 This project is built with a modern tech stack, balancing performance and development experience:
 
+- **Core Framework**: [Tauri v2](https://v2.tauri.app/) (Rust + Webview)
+- **Frontend Framework**: [Vue 3](https://vuejs.org/) + TypeScript
+- **Styling**: [Tailwind CSS v4](https://tailwindcss.com/)
+- **UI Components**: [Radix Vue](https://www.radix-vue.com/) + [Lucide Icons](https://lucide.dev/)
+- **Database**: SQLite (via `rusqlite` driver)
+
 ## Recent Features & Improvements
 
 - **Async OCR Refactor**: Windows and macOS OCR logic is now fully async, preventing deadlocks and database lock issues.
@@ -23,7 +29,7 @@ This project is built with a modern tech stack, balancing performance and develo
 Before starting, please ensure your development environment has the following tools installed:
 
 1.  **Rust**: Please install the latest stable version via [rustup](https://rustup.rs/).
-2.  **Node.js**: Recommended v18 or higher.
+2.  **Node.js**: Recommended v20 or higher.
 3.  **pnpm**: Package manager (`npm install -g pnpm`).
 4.  **System Dependencies**:
     - **macOS**: Requires Xcode Command Line Tools (`xcode-select --install`).

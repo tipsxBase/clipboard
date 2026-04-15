@@ -9,19 +9,15 @@ use tauri::Runtime; // Import ImageEncoder trait
 /// 检查 macOS 屏幕录制权限
 #[cfg(target_os = "macos")]
 pub fn check_screen_recording_permission() -> bool {
-    use objc2_app_kit::NSWorkspace;
-
-    // 尝试获取当前运行的应用程序
-    let workspace = NSWorkspace::sharedWorkspace();
-    let running_apps = workspace.runningApplications();
-
-    // 如果能获取到其他应用程序的信息，说明有权限
-    // 这是一个简单的检查，实际权限检查更复杂
-    log::info!("Found {} running applications", running_apps.len());
-
-    // 注意：这只是一个基本检查
-    // 真正的权限检查需要尝试截图并检查结果
-    true
+    // Use CGPreflightScreenCaptureAccess (macOS 10.15+) to check
+    // whether the app already has screen recording permission,
+    // without triggering the system permission prompt.
+    extern "C" {
+        fn CGPreflightScreenCaptureAccess() -> bool;
+    }
+    let has_permission = unsafe { CGPreflightScreenCaptureAccess() };
+    log::info!("Screen recording permission check: {}", has_permission);
+    has_permission
 }
 
 #[cfg(not(target_os = "macos"))]

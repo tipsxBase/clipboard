@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, watch } from "vue";
-import { listen } from "@tauri-apps/api/event";
-import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useI18n } from "vue-i18n";
-import { toTypedSchema } from "@vee-validate/zod";
-import * as z from "zod";
-import { useForm } from "vee-validate";
+import { onMounted, onUnmounted, ref, watch } from 'vue';
+import { listen } from '@tauri-apps/api/event';
+import { invoke } from '@tauri-apps/api/core';
+import { getCurrentWindow } from '@tauri-apps/api/window';
+import { useI18n } from 'vue-i18n';
+import { toTypedSchema } from '@vee-validate/zod';
+import * as z from 'zod';
+import { useForm } from 'vee-validate';
 import {
   Search,
   Settings,
@@ -45,23 +45,23 @@ import {
   FileImage,
   FileCode,
   Camera,
-} from "lucide-vue-next";
-import DOMPurify from "dompurify";
-import Button from "@/components/ui/button/Button.vue";
-import Input from "@/components/ui/input/Input.vue";
-import { Switch } from "@/components/ui/switch";
-import {
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormDescription,
-} from "@/components/ui/form";
-import { useClipboard } from "@/composables/useClipboard";
-import { useSettings } from "@/composables/useSettings";
-import { useToast } from "@/composables/useToast";
-import { useTimeAgo } from "@/composables/useTimeAgo";
-import type { ClipboardItem } from "@/types";
+  ArrowUpDown,
+  Clock,
+  Scissors,
+  Zap,
+  ChevronDown,
+  ChevronRight,
+} from 'lucide-vue-next';
+import DOMPurify from 'dompurify';
+import Button from '@/components/ui/button/Button.vue';
+import Input from '@/components/ui/input/Input.vue';
+import { Switch } from '@/components/ui/switch';
+import { FormControl, FormField, FormItem, FormLabel, FormDescription } from '@/components/ui/form';
+import { useClipboard } from '@/composables/useClipboard';
+import { useSettings } from '@/composables/useSettings';
+import { useToast } from '@/composables/useToast';
+import { useTimeAgo } from '@/composables/useTimeAgo';
+import type { ClipboardItem } from '@/types';
 import {
   Dialog,
   DialogHeader,
@@ -69,26 +69,30 @@ import {
   DialogContent,
   DialogFooter,
   DialogTitle,
-} from "@/components/ui/dialog";
-import LocalImage from "@/components/LocalImage.vue";
-import Select from "@/components/ui/select/Select.vue";
-import SelectTrigger from "@/components/ui/select/SelectTrigger.vue";
-import SelectValue from "@/components/ui/select/SelectValue.vue";
-import SelectContent from "@/components/ui/select/SelectContent.vue";
-import SelectItem from "@/components/ui/select/SelectItem.vue";
-import ItemEditorDialog from "@/components/ItemEditorDialog.vue";
-import HighlightText from "@/components/HighlightText.vue";
+} from '@/components/ui/dialog';
+import LocalImage from '@/components/LocalImage.vue';
+import Select from '@/components/ui/select/Select.vue';
+import SelectTrigger from '@/components/ui/select/SelectTrigger.vue';
+import SelectValue from '@/components/ui/select/SelectValue.vue';
+import SelectContent from '@/components/ui/select/SelectContent.vue';
+import SelectItem from '@/components/ui/select/SelectItem.vue';
+import ItemEditorDialog from '@/components/ItemEditorDialog.vue';
+import HighlightText from '@/components/HighlightText.vue';
+import QuickActionMenu from '@/components/QuickActionMenu.vue';
+import RuleEditor from '@/components/RuleEditor.vue';
+import { useRules } from '@/composables/useRules';
+import type { Rule } from '@/types';
 
 const { t } = useI18n();
-const { toastMessage } = useToast();
+const { toastMessage, showToast } = useToast();
 const { formatTimeAgo } = useTimeAgo();
 
 const handleScreenshot = async () => {
   try {
-    await invoke("start_capture");
+    await invoke('start_capture');
   } catch (e) {
-    console.error(e);
-    toastMessage.value = `Error: ${e}`;
+    console.error('Screenshot error:', e);
+    showToast(String(e));
   }
 };
 
@@ -113,6 +117,7 @@ const {
   deleteItem,
   toggleSensitive,
   togglePin,
+  toggleSnippet,
   clearHistory,
   scrollToSelected,
   setupClipboardListeners,
@@ -122,6 +127,8 @@ const {
   ocrImage,
   updateItemContent,
   addItem,
+  timeRange,
+  sortMode,
 } = useClipboard();
 function getFilesList(content: string): string[] {
   try {
@@ -139,45 +146,30 @@ function getFilesList(content: string): string[] {
 // }
 
 function getFileIcon(path: string) {
-  const ext = path.split(".").pop()?.toLowerCase();
+  const ext = path.split('.').pop()?.toLowerCase();
   if (!ext) return Files;
 
-  if (
-    ["png", "jpg", "jpeg", "gif", "bmp", "webp", "svg", "ico"].includes(ext)
-  ) {
+  if (['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'svg', 'ico'].includes(ext)) {
     return FileImage;
   }
-  if (["mp3", "wav", "ogg", "m4a", "flac", "aac"].includes(ext)) {
+  if (['mp3', 'wav', 'ogg', 'm4a', 'flac', 'aac'].includes(ext)) {
     return FileAudio;
   }
-  if (["mp4", "mkv", "avi", "mov", "webm", "wmv"].includes(ext)) {
+  if (['mp4', 'mkv', 'avi', 'mov', 'webm', 'wmv'].includes(ext)) {
     return FileVideo;
   }
-  if (["zip", "rar", "7z", "tar", "gz", "bz2", "xz"].includes(ext)) {
+  if (['zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz'].includes(ext)) {
     return FileArchive;
   }
-  if (["xls", "xlsx", "csv", "numbers"].includes(ext)) {
+  if (['xls', 'xlsx', 'csv', 'numbers'].includes(ext)) {
     return FileSpreadsheet;
   }
   if (
-    [
-      "js",
-      "ts",
-      "jsx",
-      "tsx",
-      "json",
-      "html",
-      "css",
-      "py",
-      "rs",
-      "java",
-      "c",
-      "cpp",
-    ].includes(ext)
+    ['js', 'ts', 'jsx', 'tsx', 'json', 'html', 'css', 'py', 'rs', 'java', 'c', 'cpp'].includes(ext)
   ) {
     return FileCode;
   }
-  if (["doc", "docx", "pdf", "txt", "rtf", "md"].includes(ext)) {
+  if (['doc', 'docx', 'pdf', 'txt', 'rtf', 'md'].includes(ext)) {
     return FileText;
   }
   return Files;
@@ -203,6 +195,7 @@ const {
   config,
   showSettings,
   tempShortcut,
+  tempScreenshotShortcut,
   tempMaxSize,
   tempLanguage,
   tempTheme,
@@ -210,7 +203,11 @@ const {
   tempCompactMode,
   tempClearPinnedOnClear,
   tempClearCollectedOnClear,
+  tempScreenshotFormat,
+  tempScreenshotQuality,
+  tempScreenshotSaveAction,
   isRecording,
+  isRecordingScreenshotShortcut,
   isPaused,
   isAutoStart,
   loadConfig,
@@ -219,18 +216,60 @@ const {
   toggleAutoStart,
   togglePause,
   startRecording,
+  startRecordingScreenshotShortcut,
   handleShortcutKeydown,
   setupConfigListeners,
 } = useSettings();
+
+const { rules, loadRules, addRule, updateRule, deleteRule, toggleRuleEnabled } = useRules();
+
+const showRules = ref(false);
+const editingRuleData = ref<Rule | null>(null);
+const showRuleEditor = ref(false);
+
+function openRuleEditor(rule?: Rule) {
+  editingRuleData.value = rule || null;
+  showRuleEditor.value = true;
+}
+
+async function handleRuleSave(rule: Rule) {
+  if (editingRuleData.value) {
+    await updateRule(rule);
+  } else {
+    await addRule(rule);
+  }
+  showRuleEditor.value = false;
+  editingRuleData.value = null;
+}
+
+async function handleRuleDelete(id: string) {
+  await deleteRule(id);
+  showRuleEditor.value = false;
+  editingRuleData.value = null;
+}
 
 const showItemEditor = ref(false);
 const editingItem = ref<ClipboardItem | null>(null);
 const editingNoteOnly = ref(false);
 const showHtml = ref(false);
+const linkedScreenshot = ref<ClipboardItem | null>(null);
 
-watch(previewItem, (newItem) => {
+watch(previewItem, async (newItem) => {
   showHtml.value = !!newItem?.html_content;
   editingNoteOnly.value = false;
+  // Fetch linked source screenshot for OCR text items
+  if (newItem?.screenshot_id) {
+    try {
+      const item = await invoke<ClipboardItem | null>('get_item_by_id', {
+        id: newItem.screenshot_id,
+      });
+      linkedScreenshot.value = item ?? null;
+    } catch {
+      linkedScreenshot.value = null;
+    }
+  } else {
+    linkedScreenshot.value = null;
+  }
 });
 
 function openEditor(item: ClipboardItem | null, noteOnly: boolean = false) {
@@ -247,13 +286,7 @@ function handleEditorSave(data: {
   html_content?: string;
 }) {
   if (data.id) {
-    updateItemContent(
-      data.id,
-      data.content,
-      data.dataType,
-      data.note,
-      data.html_content,
-    );
+    updateItemContent(data.id, data.content, data.dataType, data.note, data.html_content);
   } else {
     addItem(data.content);
   }
@@ -262,7 +295,8 @@ function handleEditorSave(data: {
 // Form schema
 const formSchema = toTypedSchema(
   z.object({
-    shortcut: z.string().min(1, "Shortcut is required"),
+    shortcut: z.string().min(1, 'Shortcut is required'),
+    screenshot_shortcut: z.string(),
     max_history_size: z.number().min(5).max(1000),
     language: z.string(),
     theme: z.string(),
@@ -270,13 +304,17 @@ const formSchema = toTypedSchema(
     compact_mode: z.boolean(),
     clear_pinned_on_clear: z.boolean(),
     clear_collected_on_clear: z.boolean(),
-  }),
+    screenshot_format: z.enum(['png', 'jpeg', 'webp']),
+    screenshot_quality: z.number().min(1).max(100),
+    screenshot_save_action: z.enum(['clipboard', 'file', 'both']),
+  })
 );
 
 const form = useForm({
   validationSchema: formSchema,
   initialValues: {
     shortcut: tempShortcut.value,
+    screenshot_shortcut: tempScreenshotShortcut.value,
     max_history_size: tempMaxSize.value,
     language: tempLanguage.value,
     theme: tempTheme.value,
@@ -284,11 +322,15 @@ const form = useForm({
     compact_mode: tempCompactMode.value,
     clear_pinned_on_clear: tempClearPinnedOnClear.value,
     clear_collected_on_clear: tempClearCollectedOnClear.value,
+    screenshot_format: tempScreenshotFormat.value,
+    screenshot_quality: tempScreenshotQuality.value,
+    screenshot_save_action: tempScreenshotSaveAction.value,
   },
 });
 
 const onSubmit = form.handleSubmit(async (values) => {
   tempShortcut.value = values.shortcut;
+  tempScreenshotShortcut.value = values.screenshot_shortcut;
   tempMaxSize.value = values.max_history_size;
   tempLanguage.value = values.language;
   tempTheme.value = values.theme;
@@ -296,6 +338,9 @@ const onSubmit = form.handleSubmit(async (values) => {
   tempCompactMode.value = values.compact_mode;
   tempClearPinnedOnClear.value = values.clear_pinned_on_clear;
   tempClearCollectedOnClear.value = values.clear_collected_on_clear;
+  tempScreenshotFormat.value = values.screenshot_format;
+  tempScreenshotQuality.value = values.screenshot_quality;
+  tempScreenshotSaveAction.value = values.screenshot_save_action;
   await saveConfig();
 });
 
@@ -305,6 +350,7 @@ watch(showSettings, (isOpen) => {
     form.resetForm({
       values: {
         shortcut: tempShortcut.value,
+        screenshot_shortcut: tempScreenshotShortcut.value,
         max_history_size: tempMaxSize.value,
         language: tempLanguage.value,
         theme: tempTheme.value,
@@ -312,21 +358,24 @@ watch(showSettings, (isOpen) => {
         compact_mode: tempCompactMode.value,
         clear_pinned_on_clear: tempClearPinnedOnClear.value,
         clear_collected_on_clear: tempClearCollectedOnClear.value,
+        screenshot_format: tempScreenshotFormat.value,
+        screenshot_quality: tempScreenshotQuality.value,
+        screenshot_save_action: tempScreenshotSaveAction.value,
       },
     });
   }
 });
 
-const newAppInput = ref("");
+const newAppInput = ref('');
 const showClearConfirm = ref(false);
 const showCollections = ref(false);
-const newCollectionName = ref("");
+const newCollectionName = ref('');
 const itemToAddToCollection = ref<ClipboardItem | null>(null);
 
 async function handleCreateCollection() {
   if (newCollectionName.value.trim()) {
     await createCollection(newCollectionName.value.trim());
-    newCollectionName.value = "";
+    newCollectionName.value = '';
   }
 }
 
@@ -342,16 +391,16 @@ function addSensitiveApp(appName?: string) {
   if (app) {
     const currentApps = form.values.sensitive_apps || [];
     if (!currentApps.includes(app)) {
-      form.setFieldValue("sensitive_apps", [...currentApps, app]);
+      form.setFieldValue('sensitive_apps', [...currentApps, app]);
       tempSensitiveApps.value.push(app);
       if (appName) {
         // If added via button, save immediately
         config.value.sensitive_apps = [...tempSensitiveApps.value];
         saveConfig();
-        toastMessage.value = t("settings.appBlocked", { app });
+        toastMessage.value = t('settings.appBlocked', { app });
       }
     }
-    if (!appName) newAppInput.value = "";
+    if (!appName) newAppInput.value = '';
   }
 }
 
@@ -374,16 +423,16 @@ function addSensitiveApp(appName?: string) {
 // }
 
 function getItemIcon(item: ClipboardItem) {
-  if (item.kind === "image") return ImageIcon;
+  if (item.kind === 'image') return ImageIcon;
 
   switch (item.data_type) {
-    case "url":
+    case 'url':
       return Globe;
-    case "email":
+    case 'email':
       return Mail;
-    case "code":
+    case 'code':
       return Code;
-    case "phone":
+    case 'phone':
       return Phone;
     default:
       return FileText;
@@ -392,21 +441,23 @@ function getItemIcon(item: ClipboardItem) {
 
 function getFilterIcon(filter: string) {
   switch (filter) {
-    case "text":
+    case 'text':
       return FileText;
-    case "image":
+    case 'image':
       return ImageIcon;
-    case "file":
+    case 'file':
       return Files;
-    case "sensitive":
+    case 'sensitive':
       return Lock;
-    case "url":
+    case 'snippet':
+      return Scissors;
+    case 'url':
       return Globe;
-    case "email":
+    case 'email':
       return Mail;
-    case "code":
+    case 'code':
       return Code;
-    case "phone":
+    case 'phone':
       return Phone;
     default:
       return null;
@@ -416,8 +467,8 @@ function getFilterIcon(filter: string) {
 function removeSensitiveApp(app: string) {
   const currentApps = form.values.sensitive_apps || [];
   form.setFieldValue(
-    "sensitive_apps",
-    currentApps.filter((a) => a !== app),
+    'sensitive_apps',
+    currentApps.filter((a) => a !== app)
   );
   tempSensitiveApps.value = tempSensitiveApps.value.filter((a) => a !== app);
 }
@@ -425,45 +476,36 @@ function removeSensitiveApp(app: string) {
 function handleKeydown(e: KeyboardEvent) {
   // Ignore keydown events coming from input elements or when dialogs are open
   const target = e.target as HTMLElement;
-  const isInput =
-    ["INPUT", "TEXTAREA"].includes(target.tagName) || target.isContentEditable;
+  const isInput = ['INPUT', 'TEXTAREA'].includes(target.tagName) || target.isContentEditable;
   const isDialogGiven = showSettings.value || showItemEditor.value;
 
-  if ((isInput || isDialogGiven) && e.key !== "Escape") return;
+  if ((isInput || isDialogGiven) && e.key !== 'Escape') return;
 
   const len = filteredHistory.value.length;
-  if (len === 0 && e.key !== "Escape") return;
+  if (len === 0 && e.key !== 'Escape') return;
 
   // Vim navigation
-  if (
-    (e.ctrlKey && e.key === "n") ||
-    e.key === "ArrowDown" ||
-    (e.ctrlKey && e.key === "j")
-  ) {
+  if ((e.ctrlKey && e.key === 'n') || e.key === 'ArrowDown' || (e.ctrlKey && e.key === 'j')) {
     e.preventDefault();
     selectedIndex.value = (selectedIndex.value + 1) % len;
     scrollToSelected();
-  } else if (
-    (e.ctrlKey && e.key === "p") ||
-    e.key === "ArrowUp" ||
-    (e.ctrlKey && e.key === "k")
-  ) {
+  } else if ((e.ctrlKey && e.key === 'p') || e.key === 'ArrowUp' || (e.ctrlKey && e.key === 'k')) {
     e.preventDefault();
     selectedIndex.value = (selectedIndex.value - 1 + len) % len;
     scrollToSelected();
-  } else if (e.key === "Enter") {
+  } else if (e.key === 'Enter') {
     e.preventDefault();
     if (filteredHistory.value[selectedIndex.value]) {
       pasteItem(filteredHistory.value[selectedIndex.value], false);
     }
-  } else if (e.key === " ") {
+  } else if (e.key === ' ') {
     e.preventDefault();
     if (previewItem.value) {
       previewItem.value = null;
     } else if (filteredHistory.value[selectedIndex.value]) {
       previewItem.value = filteredHistory.value[selectedIndex.value];
     }
-  } else if (e.key === "Escape") {
+  } else if (e.key === 'Escape') {
     if (previewItem.value) {
       previewItem.value = null;
     } else if (showSettings.value) {
@@ -478,29 +520,39 @@ onMounted(async () => {
   await loadConfig();
   await loadHistory(true);
   await loadCollections();
+  await loadRules();
   await setupClipboardListeners();
   await setupConfigListeners();
-  window.addEventListener("keydown", handleKeydown);
+  window.addEventListener('keydown', handleKeydown);
+
+  // Listen for rule-applied events
+  await listen('rule-applied', (event: { payload: { rule_name: string; action: string } }) => {
+    toastMessage.value = t('rules.ruleApplied', {
+      name: event.payload.rule_name,
+      action: event.payload.action,
+    });
+  });
+
+  // Listen for screenshot errors (from global shortcut path)
+  await listen('screenshot-error', (event: { payload: string }) => {
+    showToast(event.payload);
+  });
 
   // Focus search on show
-  await listen("tauri://focus", () => {
+  await listen('tauri://focus', () => {
     loadHistory(true);
   });
 });
 
 onUnmounted(() => {
-  window.removeEventListener("keydown", handleKeydown);
+  window.removeEventListener('keydown', handleKeydown);
 });
 </script>
 
 <template>
-  <div
-    class="h-screen w-screen bg-background/60 text-foreground flex flex-col overflow-hidden"
-  >
+  <div class="h-screen w-screen bg-background/60 text-foreground flex flex-col overflow-hidden">
     <!-- Header -->
-    <div
-      class="border-b border-border bg-card/40 backdrop-blur-md p-3 space-y-3"
-    >
+    <div class="border-b border-border bg-card/40 backdrop-blur-md p-3 space-y-3">
       <!-- Search Bar -->
       <div class="relative flex items-center gap-2">
         <div class="relative flex-1">
@@ -543,7 +595,7 @@ onUnmounted(() => {
           </Input>
         </div>
         <div class="text-xs text-muted-foreground whitespace-nowrap shrink-0">
-          {{ totalCount }} {{ t("stats.items") }}
+          {{ totalCount }} {{ t('stats.items') }}
         </div>
       </div>
 
@@ -557,6 +609,7 @@ onUnmounted(() => {
               'image',
               'file',
               'sensitive',
+              'snippet',
               'url',
               'email',
               'code',
@@ -568,11 +621,7 @@ onUnmounted(() => {
             :variant="activeFilter === filter ? 'default' : 'ghost'"
             class="h-6 text-[10px] uppercase font-bold tracking-wider rounded-full px-2.5 shrink-0"
           >
-            <component
-              :is="getFilterIcon(filter)"
-              class="w-3 h-3 mr-1"
-              v-if="filter !== 'all'"
-            />
+            <component :is="getFilterIcon(filter)" class="w-3 h-3 mr-1" v-if="filter !== 'all'" />
             {{ t(`filters.${filter}`) }}
           </Button>
         </div>
@@ -594,11 +643,7 @@ onUnmounted(() => {
             variant="ghost"
             class="h-7 w-7"
             :class="{ 'text-yellow-500': isPaused }"
-            :title="
-              isPaused
-                ? t('actions.resumeRecording')
-                : t('actions.pauseRecording')
-            "
+            :title="isPaused ? t('actions.resumeRecording') : t('actions.pauseRecording')"
           >
             <component :is="isPaused ? Play : Pause" class="w-4 h-4" />
           </Button>
@@ -640,6 +685,45 @@ onUnmounted(() => {
           </Button>
         </div>
       </div>
+
+      <!-- Time Range & Sort -->
+      <div class="flex items-center justify-between gap-2">
+        <div class="flex gap-1 overflow-x-auto no-scrollbar flex-1">
+          <Button
+            v-for="range in [
+              { value: null, label: t('timeRange.all') },
+              { value: 'today', label: t('timeRange.today') },
+              { value: 'yesterday', label: t('timeRange.yesterday') },
+              { value: 'week', label: t('timeRange.week') },
+              { value: 'month', label: t('timeRange.month') },
+            ]"
+            :key="range.value ?? 'all'"
+            @click="timeRange = range.value"
+            size="sm"
+            :variant="timeRange === range.value ? 'default' : 'ghost'"
+            class="h-6 text-[10px] uppercase font-bold tracking-wider rounded-full px-2.5 shrink-0"
+          >
+            <Clock class="w-3 h-3 mr-1" v-if="range.value" />
+            {{ range.label }}
+          </Button>
+        </div>
+        <div class="flex gap-1 shrink-0">
+          <Select
+            :model-value="sortMode ?? 'recent'"
+            @update:model-value="(v) => (sortMode = String(v) === 'recent' ? null : String(v))"
+          >
+            <SelectTrigger class="h-6 w-[100px] text-[10px]">
+              <ArrowUpDown class="w-3 h-3 mr-1 shrink-0" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="recent">{{ t('sort.recent') }}</SelectItem>
+              <SelectItem value="oldest">{{ t('sort.oldest') }}</SelectItem>
+              <SelectItem value="source_app">{{ t('sort.sourceApp') }}</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
     </div>
 
     <div class="flex-1 flex overflow-hidden">
@@ -655,12 +739,7 @@ onUnmounted(() => {
             :placeholder="t('collections.newPlaceholder')"
             @keydown.enter="handleCreateCollection"
           />
-          <Button
-            @click="handleCreateCollection"
-            size="icon"
-            variant="ghost"
-            class="h-7 w-7"
-          >
+          <Button @click="handleCreateCollection" size="icon" variant="ghost" class="h-7 w-7">
             <Plus class="w-4 h-4" />
           </Button>
         </div>
@@ -673,7 +752,7 @@ onUnmounted(() => {
             :class="{ 'bg-accent': activeCollectionId === null }"
           >
             <Hash class="w-3 h-3 mr-2" />
-            {{ t("collections.all") }}
+            {{ t('collections.all') }}
           </Button>
           <div
             v-for="collection in collections"
@@ -703,18 +782,13 @@ onUnmounted(() => {
       </div>
 
       <!-- List -->
-      <div
-        class="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1"
-        @scroll="handleScroll"
-      >
+      <div class="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1" @scroll="handleScroll">
         <div
           v-for="(item, index) in filteredHistory"
           :key="item.id || item.timestamp"
           class="group relative rounded-lg border border-transparent hover:bg-accent/50 hover:border-border transition-all cursor-pointer"
           :class="[
-            index === selectedIndex
-              ? 'bg-accent border-primary/20 selected-item'
-              : '',
+            index === selectedIndex ? 'bg-accent border-primary/20 selected-item' : '',
             config.compact_mode ? 'p-1.5' : 'p-3',
           ]"
           draggable="true"
@@ -722,10 +796,7 @@ onUnmounted(() => {
           @mouseenter="selectedIndex = index"
         >
           <!-- Content -->
-          <div
-            class="flex gap-3"
-            :class="config.compact_mode ? 'items-center' : 'items-start'"
-          >
+          <div class="flex gap-3" :class="config.compact_mode ? 'items-center' : 'items-start'">
             <div
               class="rounded-md bg-muted text-muted-foreground shrink-0 relative"
               :class="config.compact_mode ? 'p-1' : 'mt-0.5 p-1.5'"
@@ -746,14 +817,10 @@ onUnmounted(() => {
                 class="flex justify-between items-baseline"
                 :class="config.compact_mode ? '' : 'mb-0.5'"
               >
-                <div
-                  class="flex items-center gap-2"
-                  v-if="!config.compact_mode"
-                >
-                  <span
-                    class="text-[10px] font-mono text-muted-foreground opacity-70"
-                    >{{ formatTimeAgo(item.timestamp) }}</span
-                  >
+                <div class="flex items-center gap-2" v-if="!config.compact_mode">
+                  <span class="text-[10px] font-mono text-muted-foreground opacity-70">{{
+                    formatTimeAgo(item.timestamp)
+                  }}</span>
                   <div
                     v-if="getCollectionName(item.collection_id)"
                     class="flex items-center gap-1 bg-primary/10 text-primary px-1.5 py-0.5 rounded text-[10px]"
@@ -781,17 +848,13 @@ onUnmounted(() => {
                   </span>
                 </div>
               </div>
-              <div
-                v-if="config.compact_mode"
-                class="flex items-center justify-between gap-2"
-              >
+              <div v-if="config.compact_mode" class="flex items-center justify-between gap-2">
                 <div class="flex-1 min-w-0 flex items-center gap-2">
                   <p
                     v-if="item.kind === 'text'"
                     class="text-xs text-foreground line-clamp-1 break-all font-medium flex-1"
                     :class="{
-                      'blur-sm group-hover:blur-none transition-all':
-                        item.is_sensitive,
+                      'blur-sm group-hover:blur-none transition-all': item.is_sensitive,
                       'text-muted-foreground opacity-80': !!item.note,
                     }"
                   >
@@ -810,9 +873,7 @@ onUnmounted(() => {
                     {{ getFilesList(item.content)[0] }}
                   </p>
                   <div v-else class="flex items-center gap-2 flex-1">
-                    <span class="text-xs text-muted-foreground italic"
-                      >[Image]</span
-                    >
+                    <span class="text-xs text-muted-foreground italic">[Image]</span>
                   </div>
                 </div>
 
@@ -824,24 +885,19 @@ onUnmounted(() => {
                   <Folder class="w-3 h-3" />
                 </div>
 
-                <span
-                  class="text-[9px] font-mono text-muted-foreground opacity-50 shrink-0"
-                  >{{ formatTimeAgo(item.timestamp) }}</span
-                >
+                <span class="text-[9px] font-mono text-muted-foreground opacity-50 shrink-0">{{
+                  formatTimeAgo(item.timestamp)
+                }}</span>
               </div>
               <template v-else>
-                <p
-                  v-if="item.note"
-                  class="text-sm font-semibold text-foreground mb-0.5"
-                >
+                <p v-if="item.note" class="text-sm font-semibold text-foreground mb-0.5">
                   {{ item.note }}
                 </p>
                 <p
                   v-if="item.kind === 'text'"
                   class="text-sm text-foreground line-clamp-2 break-all font-medium"
                   :class="{
-                    'blur-sm group-hover:blur-none transition-all':
-                      item.is_sensitive,
+                    'blur-sm group-hover:blur-none transition-all': item.is_sensitive,
                     'text-muted-foreground text-xs': !!item.note,
                   }"
                 >
@@ -852,10 +908,7 @@ onUnmounted(() => {
                     :is-case-sensitive="searchCaseSensitive"
                   />
                 </p>
-                <div
-                  v-else-if="item.kind === 'file'"
-                  class="flex flex-col gap-1 mt-1"
-                >
+                <div v-else-if="item.kind === 'file'" class="flex flex-col gap-1 mt-1">
                   <div
                     v-for="(file, i) in getFilesList(item.content).slice(0, 3)"
                     :key="i"
@@ -892,6 +945,7 @@ onUnmounted(() => {
             class="absolute right-2 top-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-background/80 backdrop-blur-sm rounded-md p-0.5 shadow-sm border border-border"
             @click.stop
           >
+            <QuickActionMenu :item="item" :on-action-done="() => loadHistory(true)" />
             <Button
               v-if="item.kind !== 'image' && !item.is_sensitive"
               size="icon"
@@ -939,29 +993,29 @@ onUnmounted(() => {
               :class="item.is_pinned ? 'text-primary' : 'text-muted-foreground'"
               :title="item.is_pinned ? t('actions.unpin') : t('actions.pin')"
             >
-              <component
-                :is="item.is_pinned ? PinOff : Pin"
-                class="w-3.5 h-3.5"
-              />
+              <component :is="item.is_pinned ? PinOff : Pin" class="w-3.5 h-3.5" />
+            </Button>
+            <Button
+              @click.stop="item.id && toggleSnippet(item.id)"
+              size="icon"
+              variant="ghost"
+              class="h-6 w-6"
+              :class="item.is_snippet ? 'text-orange-500' : 'text-muted-foreground'"
+              :title="item.is_snippet ? t('actions.removeSnippet') : t('actions.addSnippet')"
+            >
+              <Scissors class="w-3.5 h-3.5" />
             </Button>
             <Button
               @click.stop="toggleSensitive(index)"
               size="icon"
               variant="ghost"
               class="h-6 w-6"
-              :class="
-                item.is_sensitive ? 'text-yellow-500' : 'text-muted-foreground'
-              "
+              :class="item.is_sensitive ? 'text-yellow-500' : 'text-muted-foreground'"
               :title="
-                item.is_sensitive
-                  ? t('actions.sensitiveTooltip')
-                  : t('actions.markSensitive')
+                item.is_sensitive ? t('actions.sensitiveTooltip') : t('actions.markSensitive')
               "
             >
-              <component
-                :is="item.is_sensitive ? Lock : Unlock"
-                class="w-3.5 h-3.5"
-              />
+              <component :is="item.is_sensitive ? Lock : Unlock" class="w-3.5 h-3.5" />
             </Button>
             <Button
               @click.stop="previewItem = item"
@@ -997,8 +1051,8 @@ onUnmounted(() => {
           class="flex flex-col items-center justify-center h-40 text-muted-foreground"
         >
           <Command class="w-8 h-8 mb-2 opacity-20" />
-          <p class="text-sm">{{ t("emptyState.title") }}</p>
-          <p class="text-xs opacity-50 mt-1">{{ t("emptyState.subtitle") }}</p>
+          <p class="text-sm">{{ t('emptyState.title') }}</p>
+          <p class="text-xs opacity-50 mt-1">{{ t('emptyState.subtitle') }}</p>
         </div>
       </div>
     </div>
@@ -1008,24 +1062,19 @@ onUnmounted(() => {
     >
       <div class="flex items-center gap-2">
         <span class="flex items-center gap-1"
-          ><span class="bg-muted px-1 rounded">↑↓</span>
-          {{ t("actions.navigate") }}</span
+          ><span class="bg-muted px-1 rounded">↑↓</span> {{ t('actions.navigate') }}</span
         >
         <span class="flex items-center gap-1"
-          ><span class="bg-muted px-1 rounded">↵</span>
-          {{ t("actions.paste") }}</span
+          ><span class="bg-muted px-1 rounded">↵</span> {{ t('actions.paste') }}</span
         >
         <span class="flex items-center gap-1"
           ><span class="bg-muted px-1 rounded">Space</span>
-          {{ t("actions.preview").split(" ")[0] }}</span
+          {{ t('actions.preview').split(' ')[0] }}</span
         >
       </div>
       <div class="flex items-center gap-1">
         <span>{{ config.shortcut }}</span>
-        <div
-          v-if="isLoading"
-          class="py-4 text-center text-xs text-muted-foreground"
-        >
+        <div v-if="isLoading" class="py-4 text-center text-xs text-muted-foreground">
           Loading...
         </div>
       </div>
@@ -1050,23 +1099,14 @@ onUnmounted(() => {
       <div
         class="bg-card rounded-xl shadow-2xl border border-border max-w-2xl w-full max-h-[80vh] flex flex-col overflow-hidden"
       >
-        <div
-          class="p-4 border-b border-border flex justify-between items-center bg-muted/30"
-        >
+        <div class="p-4 border-b border-border flex justify-between items-center bg-muted/30">
           <div class="flex items-center gap-2 text-muted-foreground">
             <FileText v-if="previewItem.kind === 'text'" class="w-4 h-4" />
             <Files v-else-if="previewItem.kind === 'file'" class="w-4 h-4" />
             <ImageIcon v-else class="w-4 h-4" />
-            <span class="text-sm font-medium">{{
-              formatTimeAgo(previewItem.timestamp)
-            }}</span>
+            <span class="text-sm font-medium">{{ formatTimeAgo(previewItem.timestamp) }}</span>
           </div>
-          <Button
-            @click="previewItem = null"
-            size="icon"
-            variant="ghost"
-            class="h-8 w-8"
-          >
+          <Button @click="previewItem = null" size="icon" variant="ghost" class="h-8 w-8">
             <X class="w-5 h-5" />
           </Button>
         </div>
@@ -1080,7 +1120,7 @@ onUnmounted(() => {
                 @click="showHtml = !showHtml"
               >
                 <component :is="showHtml ? FileText : Code" class="w-3 h-3" />
-                {{ showHtml ? "Text" : "HTML" }}
+                {{ showHtml ? 'Text' : 'HTML' }}
               </Button>
             </div>
             <div
@@ -1096,16 +1136,23 @@ onUnmounted(() => {
                 "
               ></div>
             </div>
-            <pre
-              v-else
-              class="font-mono text-sm text-foreground whitespace-pre-wrap break-all"
-              >{{ previewContent || previewItem.content }}</pre
-            >
+            <pre v-else class="font-mono text-sm text-foreground whitespace-pre-wrap break-all">{{
+              previewContent || previewItem.content
+            }}</pre>
+            <!-- Linked source screenshot for OCR text -->
+            <div v-if="linkedScreenshot" class="mt-3 pt-3 border-t border-border">
+              <p class="text-xs text-muted-foreground mb-2 flex items-center gap-1">
+                <ImageIcon class="w-3 h-3" />
+                {{ t('preview.sourceScreenshot') }}
+              </p>
+              <LocalImage
+                :src="linkedScreenshot.content"
+                class="max-w-full max-h-40 rounded-md shadow-sm cursor-pointer hover:opacity-80 transition-opacity"
+                @click="previewItem = linkedScreenshot"
+              />
+            </div>
           </div>
-          <div
-            v-else-if="previewItem.kind === 'file'"
-            class="flex flex-col gap-2"
-          >
+          <div v-else-if="previewItem.kind === 'file'" class="flex flex-col gap-2">
             <h3 class="font-medium text-sm text-muted-foreground">
               {{ getFilesList(previewItem.content).length }} Files
             </h3>
@@ -1115,31 +1162,24 @@ onUnmounted(() => {
                 :key="i"
                 class="flex items-center gap-2 p-2 bg-muted/50 rounded text-sm break-all font-mono"
               >
-                <component
-                  :is="getFileIcon(file)"
-                  class="shrink-0 w-5 h-5 text-muted-foreground"
-                />
+                <component :is="getFileIcon(file)" class="shrink-0 w-5 h-5 text-muted-foreground" />
                 {{ file }}
               </div>
             </div>
           </div>
           <div v-else class="flex justify-center">
-            <LocalImage
-              :src="previewItem.content"
-              class="max-w-full rounded-lg shadow-lg"
-            />
+            <LocalImage :src="previewItem.content" class="max-w-full rounded-lg shadow-lg" />
           </div>
         </div>
-        <div
-          class="p-3 border-t border-border bg-muted/30 flex justify-end gap-2"
-        >
+        <div class="p-3 border-t border-border bg-muted/30 flex justify-end gap-2">
+          <QuickActionMenu :item="previewItem!" :on-action-done="() => loadHistory(true)" />
           <Button
             v-if="previewItem.kind === 'image'"
             @click="ocrImage(previewItem!)"
             variant="secondary"
             class="gap-2"
           >
-            <ScanText class="w-4 h-4" /> {{ t("actions.ocr") }}
+            <ScanText class="w-4 h-4" /> {{ t('actions.ocr') }}
           </Button>
           <Button
             @click="
@@ -1148,7 +1188,7 @@ onUnmounted(() => {
             "
             class="gap-2"
           >
-            <CornerDownLeft class="w-4 h-4" /> {{ t("actions.paste") }}
+            <CornerDownLeft class="w-4 h-4" /> {{ t('actions.paste') }}
           </Button>
         </div>
       </div>
@@ -1159,11 +1199,11 @@ onUnmounted(() => {
       <DialogContent class="w-80">
         <DialogHeader>
           <DialogTitle class="flex items-center gap-2 text-destructive">
-            <Trash2 class="w-5 h-5" /> {{ t("actions.clearHistory") }}
+            <Trash2 class="w-5 h-5" /> {{ t('actions.clearHistory') }}
           </DialogTitle>
         </DialogHeader>
         <DialogDescription class="mb-6">
-          {{ t("toast.confirmClearHistory") }}
+          {{ t('toast.confirmClearHistory') }}
         </DialogDescription>
         <DialogFooter class="flex gap-3">
           <Button
@@ -1174,14 +1214,10 @@ onUnmounted(() => {
             variant="destructive"
             class="flex-1"
           >
-            {{ t("actions.delete") }}
+            {{ t('actions.delete') }}
           </Button>
-          <Button
-            @click="showClearConfirm = false"
-            variant="secondary"
-            class="flex-1"
-          >
-            {{ t("settings.cancel") }}
+          <Button @click="showClearConfirm = false" variant="secondary" class="flex-1">
+            {{ t('settings.cancel') }}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1192,22 +1228,16 @@ onUnmounted(() => {
       <DialogContent class="w-[800px]! max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle class="flex items-center gap-2">
-            <Settings class="w-5 h-5 text-primary" /> {{ t("settings.title") }}
+            <Settings class="w-5 h-5 text-primary" /> {{ t('settings.title') }}
           </DialogTitle>
         </DialogHeader>
         <form @submit="onSubmit">
           <div class="grid grid-cols-2 gap-x-4 gap-y-4 mt-4">
             <!-- Global Shortcut -->
-            <FormField
-              v-slot="{ componentField }"
-              name="shortcut"
-              class="col-span-2"
-            >
+            <FormField v-slot="{ componentField }" name="shortcut" class="col-span-2">
               <FormItem class="col-span-2">
-                <FormLabel
-                  class="text-xs font-bold text-muted-foreground uppercase tracking-wider"
-                >
-                  {{ t("settings.globalShortcut") }}
+                <FormLabel class="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                  {{ t('settings.globalShortcut') }}
                 </FormLabel>
                 <FormControl>
                   <div class="relative">
@@ -1227,11 +1257,112 @@ onUnmounted(() => {
                       <span
                         class="animate-ping absolute inline-flex h-full w-full rounded-full bg-destructive opacity-75"
                       ></span>
-                      <span
-                        class="relative inline-flex rounded-full h-2 w-2 bg-destructive"
-                      ></span>
+                      <span class="relative inline-flex rounded-full h-2 w-2 bg-destructive"></span>
                     </span>
                   </div>
+                </FormControl>
+              </FormItem>
+            </FormField>
+
+            <!-- Screenshot Shortcut -->
+            <FormField v-slot="{ componentField }" name="screenshot_shortcut" class="col-span-2">
+              <FormItem class="col-span-2">
+                <FormLabel class="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                  {{ t('settings.screenshotShortcut') }}
+                </FormLabel>
+                <FormControl>
+                  <div class="relative">
+                    <Input
+                      readonly
+                      :placeholder="t('settings.recordShortcut')"
+                      class="cursor-pointer"
+                      :model-value="componentField.modelValue"
+                      @click="startRecordingScreenshotShortcut"
+                      @keydown="handleShortcutKeydown"
+                      @blur="componentField.onBlur"
+                    />
+                    <span
+                      v-if="isRecordingScreenshotShortcut"
+                      class="absolute right-3 top-1/2 transform -translate-y-1/2 flex h-2 w-2"
+                    >
+                      <span
+                        class="animate-ping absolute inline-flex h-full w-full rounded-full bg-destructive opacity-75"
+                      ></span>
+                      <span class="relative inline-flex rounded-full h-2 w-2 bg-destructive"></span>
+                    </span>
+                  </div>
+                </FormControl>
+              </FormItem>
+            </FormField>
+
+            <!-- Screenshot Format -->
+            <FormField v-slot="{ componentField }" name="screenshot_format">
+              <FormItem>
+                <FormLabel class="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                  {{ t('settings.screenshotFormat') }}
+                </FormLabel>
+                <FormControl>
+                  <Select v-bind="componentField">
+                    <SelectTrigger class="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="png">PNG</SelectItem>
+                      <SelectItem value="jpeg">JPEG</SelectItem>
+                      <SelectItem value="webp">WebP</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </FormControl>
+              </FormItem>
+            </FormField>
+
+            <!-- Screenshot Quality -->
+            <FormField v-slot="{ componentField }" name="screenshot_quality">
+              <FormItem>
+                <FormLabel class="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                  {{ t('settings.screenshotQuality') }}
+                  <span class="ml-1 text-muted-foreground font-normal"
+                    >({{ componentField.modelValue }}%)</span
+                  >
+                </FormLabel>
+                <FormControl>
+                  <Input
+                    type="range"
+                    min="1"
+                    max="100"
+                    :model-value="componentField.modelValue"
+                    @update:model-value="componentField['onUpdate:modelValue']"
+                    @input="
+                      (e: Event) =>
+                        componentField['onUpdate:modelValue']?.(
+                          Number((e.target as HTMLInputElement).value)
+                        )
+                    "
+                    @blur="componentField.onBlur"
+                  />
+                </FormControl>
+              </FormItem>
+            </FormField>
+
+            <!-- Screenshot Save Action -->
+            <FormField v-slot="{ componentField }" name="screenshot_save_action" class="col-span-2">
+              <FormItem class="col-span-2">
+                <FormLabel class="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                  {{ t('settings.screenshotSaveAction') }}
+                </FormLabel>
+                <FormControl>
+                  <Select v-bind="componentField">
+                    <SelectTrigger class="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="clipboard">{{
+                        t('settings.saveActionClipboard')
+                      }}</SelectItem>
+                      <SelectItem value="file">{{ t('settings.saveActionFile') }}</SelectItem>
+                      <SelectItem value="both">{{ t('settings.saveActionBoth') }}</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </FormControl>
               </FormItem>
             </FormField>
@@ -1239,10 +1370,8 @@ onUnmounted(() => {
             <!-- History Size -->
             <FormField v-slot="{ componentField }" name="max_history_size">
               <FormItem>
-                <FormLabel
-                  class="text-xs font-bold text-muted-foreground uppercase tracking-wider"
-                >
-                  {{ t("settings.historySize") }}
+                <FormLabel class="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                  {{ t('settings.historySize') }}
                 </FormLabel>
                 <FormControl>
                   <Input
@@ -1260,10 +1389,8 @@ onUnmounted(() => {
             <!-- Language -->
             <FormField v-slot="{ componentField }" name="language">
               <FormItem>
-                <FormLabel
-                  class="text-xs font-bold text-muted-foreground uppercase tracking-wider"
-                >
-                  {{ t("settings.language") }}
+                <FormLabel class="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                  {{ t('settings.language') }}
                 </FormLabel>
                 <FormControl>
                   <Select v-bind="componentField">
@@ -1272,14 +1399,10 @@ onUnmounted(() => {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="auto">
-                        {{ t("settings.languageAuto") }}
+                        {{ t('settings.languageAuto') }}
                       </SelectItem>
-                      <SelectItem value="en">{{
-                        t("settings.languageEn")
-                      }}</SelectItem>
-                      <SelectItem value="zh"
-                        >{{ t("settings.languageZh") }}
-                      </SelectItem>
+                      <SelectItem value="en">{{ t('settings.languageEn') }}</SelectItem>
+                      <SelectItem value="zh">{{ t('settings.languageZh') }} </SelectItem>
                     </SelectContent>
                   </Select>
                 </FormControl>
@@ -1289,10 +1412,8 @@ onUnmounted(() => {
             <!-- Theme -->
             <FormField v-slot="{ componentField }" name="theme">
               <FormItem>
-                <FormLabel
-                  class="text-xs font-bold text-muted-foreground uppercase tracking-wider"
-                >
-                  {{ t("settings.theme") }}
+                <FormLabel class="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                  {{ t('settings.theme') }}
                 </FormLabel>
                 <FormControl>
                   <Select v-bind="componentField">
@@ -1300,15 +1421,11 @@ onUnmounted(() => {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="auto">{{
-                        t("settings.themeAuto")
-                      }}</SelectItem>
+                      <SelectItem value="auto">{{ t('settings.themeAuto') }}</SelectItem>
                       <SelectItem value="light">
-                        {{ t("settings.themeLight") }}
+                        {{ t('settings.themeLight') }}
                       </SelectItem>
-                      <SelectItem value="dark">{{
-                        t("settings.themeDark")
-                      }}</SelectItem>
+                      <SelectItem value="dark">{{ t('settings.themeDark') }}</SelectItem>
                     </SelectContent>
                   </Select>
                 </FormControl>
@@ -1318,7 +1435,7 @@ onUnmounted(() => {
             <FormField v-slot="componentField" name="compact_mode">
               <FormItem class="flex flex-col">
                 <FormLabel class="text-sm font-medium">
-                  {{ t("settings.compactMode") }}
+                  {{ t('settings.compactMode') }}
                 </FormLabel>
                 <FormControl>
                   <Switch
@@ -1334,7 +1451,7 @@ onUnmounted(() => {
               <label
                 class="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2 block"
               >
-                {{ t("settings.sensitiveApps") }}
+                {{ t('settings.sensitiveApps') }}
               </label>
               <div class="space-y-2">
                 <div class="flex gap-2">
@@ -1353,9 +1470,7 @@ onUnmounted(() => {
                     <Plus class="w-4 h-4" />
                   </Button>
                 </div>
-                <div
-                  class="max-h-32 overflow-y-auto custom-scrollbar space-y-1"
-                >
+                <div class="max-h-32 overflow-y-auto custom-scrollbar space-y-1">
                   <div
                     v-for="app in form.values.sensitive_apps"
                     :key="app"
@@ -1377,9 +1492,7 @@ onUnmounted(() => {
             <!-- Clear Pinned on Clear -->
             <FormField v-slot="componentField" name="clear_pinned_on_clear">
               <FormItem class="flex flex-col">
-                <FormLabel class="text-sm font-medium">
-                  清除时包含置顶项
-                </FormLabel>
+                <FormLabel class="text-sm font-medium"> 清除时包含置顶项 </FormLabel>
                 <FormControl>
                   <Switch
                     :model-value="componentField.value"
@@ -1395,9 +1508,7 @@ onUnmounted(() => {
             <!-- Clear Collected on Clear -->
             <FormField v-slot="componentField" name="clear_collected_on_clear">
               <FormItem class="flex flex-col">
-                <FormLabel class="text-sm font-medium">
-                  清除时包含收藏项
-                </FormLabel>
+                <FormLabel class="text-sm font-medium"> 清除时包含收藏项 </FormLabel>
                 <FormControl>
                   <Switch
                     :model-value="componentField.value"
@@ -1414,26 +1525,99 @@ onUnmounted(() => {
             <div class="col-span-2">
               <div class="flex items-center justify-between py-2">
                 <label class="text-sm font-medium text-foreground">
-                  {{ t("settings.startAtLogin") }}
+                  {{ t('settings.startAtLogin') }}
                 </label>
-                <Switch
-                  :checked="isAutoStart"
-                  @update:checked="toggleAutoStart"
+                <Switch :checked="isAutoStart" @update:checked="toggleAutoStart" />
+              </div>
+            </div>
+
+            <!-- Automation Rules -->
+            <div class="col-span-2">
+              <button
+                type="button"
+                class="flex items-center gap-2 w-full text-left mb-2"
+                @click="showRules = !showRules"
+              >
+                <component
+                  :is="showRules ? ChevronDown : ChevronRight"
+                  class="w-4 h-4 text-muted-foreground"
                 />
+                <Zap class="w-4 h-4 text-primary" />
+                <span class="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                  {{ t('rules.title') }}
+                </span>
+                <span class="text-xs text-muted-foreground ml-auto">{{ rules.length }}</span>
+              </button>
+
+              <div v-if="showRules" class="space-y-2">
+                <!-- Rule List -->
+                <div
+                  v-if="rules.length === 0"
+                  class="text-sm text-muted-foreground py-3 text-center"
+                >
+                  {{ t('rules.noRules') }}
+                </div>
+                <div v-else class="max-h-48 overflow-y-auto custom-scrollbar space-y-1">
+                  <div
+                    v-for="rule in rules"
+                    :key="rule.id"
+                    class="flex items-center justify-between bg-muted/50 px-3 py-2 rounded text-sm group cursor-pointer hover:bg-muted/80 transition-colors"
+                    @click="openRuleEditor(rule)"
+                  >
+                    <div class="flex items-center gap-2 min-w-0">
+                      <Switch
+                        :checked="rule.enabled"
+                        class="scale-75"
+                        @click.stop
+                        @update:checked="toggleRuleEnabled(rule)"
+                      />
+                      <span
+                        class="truncate"
+                        :class="{ 'text-muted-foreground line-through': !rule.enabled }"
+                      >
+                        {{ rule.name }}
+                      </span>
+                    </div>
+                    <span class="text-xs text-muted-foreground shrink-0 ml-2">
+                      {{ t(`rules.actionType.${rule.action.action_type}`) }}
+                    </span>
+                  </div>
+                </div>
+
+                <!-- Rule Editor -->
+                <div v-if="showRuleEditor" class="border border-border rounded-lg p-3 bg-card">
+                  <RuleEditor
+                    :rule="editingRuleData || undefined"
+                    :collections="collections"
+                    @save="handleRuleSave"
+                    @cancel="
+                      showRuleEditor = false;
+                      editingRuleData = null;
+                    "
+                    @delete="handleRuleDelete"
+                  />
+                </div>
+
+                <!-- Add Rule Button -->
+                <Button
+                  v-if="!showRuleEditor"
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  class="w-full"
+                  @click="openRuleEditor()"
+                >
+                  <Plus class="w-3 h-3 mr-1" /> {{ t('rules.addRule') }}
+                </Button>
               </div>
             </div>
           </div>
           <DialogFooter class="flex gap-3 mt-8">
             <Button type="submit" class="flex-1">
-              {{ t("settings.save") }}
+              {{ t('settings.save') }}
             </Button>
-            <Button
-              type="button"
-              @click="showSettings = false"
-              variant="secondary"
-              class="flex-1"
-            >
-              {{ t("settings.cancel") }}
+            <Button type="button" @click="showSettings = false" variant="secondary" class="flex-1">
+              {{ t('settings.cancel') }}
             </Button>
           </DialogFooter>
         </form>
@@ -1448,18 +1632,11 @@ onUnmounted(() => {
       <div
         class="bg-card rounded-xl shadow-2xl border border-border max-w-sm w-full flex flex-col overflow-hidden"
       >
-        <div
-          class="p-4 border-b border-border flex justify-between items-center"
-        >
+        <div class="p-4 border-b border-border flex justify-between items-center">
           <h3 class="font-medium text-sm">
-            {{ t("actions.addToCollection") }}
+            {{ t('actions.addToCollection') }}
           </h3>
-          <Button
-            @click="itemToAddToCollection = null"
-            size="icon"
-            variant="ghost"
-            class="h-6 w-6"
-          >
+          <Button @click="itemToAddToCollection = null" size="icon" variant="ghost" class="h-6 w-6">
             <X class="w-4 h-4" />
           </Button>
         </div>
@@ -1474,7 +1651,7 @@ onUnmounted(() => {
             }"
           >
             <X class="w-3 h-3 mr-2" />
-            {{ t("collections.removeFromCollection") }}
+            {{ t('collections.removeFromCollection') }}
           </Button>
           <Button
             v-for="collection in collections"
@@ -1484,8 +1661,7 @@ onUnmounted(() => {
             size="sm"
             class="w-full justify-start text-xs"
             :class="{
-              'bg-accent':
-                itemToAddToCollection.collection_id === collection.id,
+              'bg-accent': itemToAddToCollection.collection_id === collection.id,
             }"
           >
             <Folder class="w-3 h-3 mr-2" />
