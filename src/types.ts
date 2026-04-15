@@ -19,6 +19,8 @@ export interface Collection {
   id: number;
   name: string;
   created_at: string;
+  icon?: string;
+  color?: string;
 }
 
 export interface RuleCondition {

@@ -78,6 +78,11 @@ const messages = {
       itemUpdated: 'Item updated',
       updateFailed: 'Failed to update item',
       removeFromCollection: 'Remove from Collection',
+      editCollection: 'Edit Collection',
+      updated: 'Collection Updated',
+      rename: 'Rename',
+      selectIcon: 'Select Icon',
+      selectColor: 'Select Color',
     },
     deleteDialog: {
       title: 'Confirm Action',
@@ -320,6 +325,11 @@ const messages = {
       itemUpdated: '记录已更新',
       updateFailed: '更新失败',
       removeFromCollection: '从收藏夹移除',
+      editCollection: '编辑收藏夹',
+      updated: '收藏夹已更新',
+      rename: '重命名',
+      selectIcon: '选择图标',
+      selectColor: '选择颜色',
     },
     deleteDialog: {
       title: '确认操作',

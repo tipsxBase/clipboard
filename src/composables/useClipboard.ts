@@ -390,6 +390,17 @@ export function useClipboard() {
     }
   }
 
+  async function updateCollection(id: number, name: string, icon?: string, color?: string) {
+    try {
+      await invoke('update_collection', { id, name, icon, color });
+      await loadCollections();
+      showToast(t('collections.updated'));
+    } catch (e) {
+      console.error('Failed to update collection:', e);
+      showToast(t('collections.updateFailed'));
+    }
+  }
+
   async function setItemCollection(itemId: number, collectionId: number | null) {
     try {
       await invoke('set_item_collection', { itemId, collectionId });
@@ -455,6 +466,7 @@ export function useClipboard() {
     loadCollections,
     createCollection,
     deleteCollection,
+    updateCollection,
     setItemCollection,
     pasteItem,
     deleteItem,

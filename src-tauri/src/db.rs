@@ -102,6 +102,12 @@ impl Database {
             tx.execute("PRAGMA user_version = 8", [])?;
         }
 
+        if version < 9 {
+            let _ = tx.execute("ALTER TABLE collections ADD COLUMN icon TEXT DEFAULT 'folder'", []);
+            let _ = tx.execute("ALTER TABLE collections ADD COLUMN color TEXT DEFAULT ''", []);
+            tx.execute("PRAGMA user_version = 9", [])?;
+        }
+
         tx.commit()?;
 
         // Add REGEXP function
@@ -862,7 +868,7 @@ impl Database {
         let conn = self.conn.lock().unwrap();
         let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
         conn.execute(
-            "INSERT INTO collections (name, created_at) VALUES (?1, ?2)",
+            "INSERT INTO collections (name, created_at, icon, color) VALUES (?1, ?2, 'folder', '')",
             params![name, timestamp],
         )?;
         let id = conn.last_insert_rowid();
@@ -870,18 +876,22 @@ impl Database {
             id,
             name,
             created_at: timestamp,
+            icon: "folder".to_string(),
+            color: "".to_string(),
         })
     }
 
     pub fn get_collections(&self) -> Result<Vec<Collection>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt =
-            conn.prepare("SELECT id, name, created_at FROM collections ORDER BY created_at DESC")?;
+            conn.prepare("SELECT id, name, created_at, icon, color FROM collections ORDER BY created_at DESC")?;
         let rows = stmt.query_map([], |row| {
             Ok(Collection {
                 id: row.get(0)?,
                 name: row.get(1)?,
                 created_at: row.get(2)?,
+                icon: row.get::<_, Option<String>>(3)?.unwrap_or_else(|| "folder".to_string()),
+                color: row.get::<_, Option<String>>(4)?.unwrap_or_default(),
             })
         })?;
 
@@ -890,6 +900,21 @@ impl Database {
             collections.push(row?);
         }
         Ok(collections)
+    }
+
+    pub fn update_collection(
+        &self,
+        id: i64,
+        name: String,
+        icon: Option<String>,
+        color: Option<String>,
+    ) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE collections SET name = ?1, icon = ?2, color = ?3 WHERE id = ?4",
+            params![name, icon.unwrap_or_else(|| "folder".to_string()), color.unwrap_or_default(), id],
+        )?;
+        Ok(())
     }
 
     pub fn delete_collection(&self, id: i64) -> Result<()> {

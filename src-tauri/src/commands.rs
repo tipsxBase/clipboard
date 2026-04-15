@@ -715,6 +715,20 @@ pub fn delete_collection(state: tauri::State<AppState>, id: i64) -> Result<(), S
 }
 
 #[tauri::command]
+pub fn update_collection(
+    state: tauri::State<AppState>,
+    id: i64,
+    name: String,
+    icon: Option<String>,
+    color: Option<String>,
+) -> Result<(), String> {
+    state
+        .db
+        .update_collection(id, name, icon, color)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn set_item_collection(
     state: tauri::State<AppState>,
     item_id: i64,

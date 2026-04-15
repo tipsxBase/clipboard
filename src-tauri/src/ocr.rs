@@ -190,8 +190,17 @@ pub async fn recognize_text(image_path: &str) -> Result<String, String> {
             }
 
             // 9. 创建 OCR 引擎（尝试指定中文）
-            let engine = OcrEngine::TryCreateFromUserProfileLanguages()
-                .map_err(|e| format!("Failed to create OCR engine: {}", e))?;
+            let engine = match OcrEngine::TryCreateFromUserProfileLanguages() {
+                Ok(Some(e)) => e,
+                Ok(None) => {
+                    log::error!("No OCR language packs installed on this system");
+                    return Err("OCR is not available. Please install a language pack in Windows Settings > Time & Language > Language, then restart the app.".to_string());
+                }
+                Err(e) => {
+                    log::error!("Failed to create OCR engine: {:?}", e);
+                    return Err(format!("Failed to create OCR engine: {}", e));
+                }
+            };
             log::info!("OcrEngine created successfully");
             // 10. 执行 OCR
             let result = engine

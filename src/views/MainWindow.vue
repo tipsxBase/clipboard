@@ -51,17 +51,26 @@ import {
   Zap,
   ChevronDown,
   ChevronRight,
+  Star,
+  Heart,
+  Bookmark,
+  Tag,
+  Box,
+  Briefcase,
+  Home,
+  Palette,
 } from 'lucide-vue-next';
 import DOMPurify from 'dompurify';
 import Button from '@/components/ui/button/Button.vue';
 import Input from '@/components/ui/input/Input.vue';
 import { Switch } from '@/components/ui/switch';
 import { FormControl, FormField, FormItem, FormLabel, FormDescription } from '@/components/ui/form';
+import { Label } from '@/components/ui/label';
 import { useClipboard } from '@/composables/useClipboard';
 import { useSettings } from '@/composables/useSettings';
 import { useToast } from '@/composables/useToast';
 import { useTimeAgo } from '@/composables/useTimeAgo';
-import type { ClipboardItem } from '@/types';
+import type { ClipboardItem, Collection } from '@/types';
 import {
   Dialog,
   DialogHeader,
@@ -112,6 +121,7 @@ const {
   loadCollections,
   createCollection,
   deleteCollection,
+  updateCollection,
   setItemCollection,
   pasteItem,
   deleteItem,
@@ -384,6 +394,63 @@ async function handleAddToCollection(collectionId: number | null) {
     await setItemCollection(itemToAddToCollection.value.id, collectionId);
     itemToAddToCollection.value = null;
   }
+}
+
+// Collection editor state
+const showCollectionEditor = ref(false);
+const editingCollection = ref<Collection | null>(null);
+const editingCollectionName = ref('');
+const editingCollectionIcon = ref('folder');
+const editingCollectionColor = ref('');
+
+// Collection icon options
+const collectionIcons = [
+  { name: 'folder', icon: Folder },
+  { name: 'star', icon: Star },
+  { name: 'heart', icon: Heart },
+  { name: 'bookmark', icon: Bookmark },
+  { name: 'tag', icon: Tag },
+  { name: 'box', icon: Box },
+  { name: 'briefcase', icon: Briefcase },
+  { name: 'home', icon: Home },
+];
+
+// Collection color options
+const collectionColors = [
+  '', // Default
+  '#FF5733',
+  '#33FF57',
+  '#3357FF',
+  '#FF33F5',
+  '#F5FF33',
+  '#33FFF5',
+  '#FF8C33',
+  '#8C33FF',
+];
+
+function getCollectionIconComponent(iconName?: string) {
+  const icon = collectionIcons.find((i) => i.name === iconName);
+  return icon?.icon || Folder;
+}
+
+function openCollectionEditor(collection: Collection) {
+  editingCollection.value = collection;
+  editingCollectionName.value = collection.name;
+  editingCollectionIcon.value = collection.icon || 'folder';
+  editingCollectionColor.value = collection.color || '';
+  showCollectionEditor.value = true;
+}
+
+async function handleSaveCollection() {
+  if (!editingCollection.value || !editingCollectionName.value.trim()) return;
+  await updateCollection(
+    editingCollection.value.id,
+    editingCollectionName.value.trim(),
+    editingCollectionIcon.value,
+    editingCollectionColor.value
+  );
+  showCollectionEditor.value = false;
+  editingCollection.value = null;
 }
 
 function addSensitiveApp(appName?: string) {
@@ -766,8 +833,20 @@ onUnmounted(() => {
               class="flex-1 justify-start text-xs truncate"
               :class="{ 'bg-accent': activeCollectionId === collection.id }"
             >
-              <Folder class="w-3 h-3 mr-2 shrink-0" />
+              <component
+                :is="getCollectionIconComponent(collection.icon)"
+                class="w-3 h-3 mr-2 shrink-0"
+                :style="{ color: collection.color || 'inherit' }"
+              />
               <span class="truncate">{{ collection.name }}</span>
+            </Button>
+            <Button
+              @click.stop="openCollectionEditor(collection)"
+              variant="ghost"
+              size="icon"
+              class="h-6 w-6 opacity-0 group-hover:opacity-100"
+            >
+              <Edit2 class="w-3 h-3 text-muted-foreground hover:text-primary" />
             </Button>
             <Button
               @click.stop="deleteCollection(collection.id)"
@@ -1193,6 +1272,79 @@ onUnmounted(() => {
         </div>
       </div>
     </div>
+
+    <!-- Collection Editor Dialog -->
+    <Dialog v-model:open="showCollectionEditor">
+      <DialogContent class="w-[400px]">
+        <DialogHeader>
+          <DialogTitle class="flex items-center gap-2">
+            <Folder class="w-5 h-5 text-primary" /> {{ t('collections.editCollection') }}
+          </DialogTitle>
+        </DialogHeader>
+        <div class="space-y-4 py-4">
+          <!-- Name Input -->
+          <div class="space-y-2">
+            <Label class="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+              {{ t('collections.rename') }}
+            </Label>
+            <Input v-model="editingCollectionName" class="h-8" />
+          </div>
+
+          <!-- Icon Selection -->
+          <div class="space-y-2">
+            <Label class="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+              {{ t('collections.selectIcon') }}
+            </Label>
+            <div class="flex gap-2">
+              <Button
+                v-for="iconOpt in collectionIcons"
+                :key="iconOpt.name"
+                @click="editingCollectionIcon = iconOpt.name"
+                variant="outline"
+                size="icon"
+                class="h-8 w-8"
+                :class="{ 'bg-primary text-primary-foreground': editingCollectionIcon === iconOpt.name }"
+              >
+                <component :is="iconOpt.icon" class="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+
+          <!-- Color Selection -->
+          <div class="space-y-2">
+            <Label class="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+              {{ t('collections.selectColor') }}
+            </Label>
+            <div class="flex gap-2">
+              <Button
+                v-for="colorOpt in collectionColors"
+                :key="colorOpt"
+                @click="editingCollectionColor = colorOpt"
+                variant="outline"
+                size="icon"
+                class="h-8 w-8"
+                :class="{ 'ring-2 ring-primary': editingCollectionColor === colorOpt }"
+              >
+                <div
+                  v-if="colorOpt"
+                  class="w-4 h-4 rounded-full"
+                  :style="{ backgroundColor: colorOpt }"
+                />
+                <Palette v-else class="w-4 h-4 text-muted-foreground" />
+              </Button>
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button @click="showCollectionEditor = false" variant="outline">
+            {{ t('settings.cancel') }}
+          </Button>
+          <Button @click="handleSaveCollection" :disabled="!editingCollectionName.trim()">
+            {{ t('settings.save') }}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
 
     <!-- Clear History Confirmation Dialog -->
     <Dialog v-model:open="showClearConfirm">

@@ -36,6 +36,14 @@ pub struct Collection {
     pub id: i64,
     pub name: String,
     pub created_at: String,
+    #[serde(default = "default_collection_icon")]
+    pub icon: String,
+    #[serde(default)]
+    pub color: String,
+}
+
+fn default_collection_icon() -> String {
+    "folder".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

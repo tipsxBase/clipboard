@@ -367,6 +367,7 @@ pub fn run() {
             create_collection,
             get_collections,
             delete_collection,
+            update_collection,
             set_item_collection,
             set_paste_stack,
             ocr_image,
