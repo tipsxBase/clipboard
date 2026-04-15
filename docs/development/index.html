@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="generator" content="Docusaurus v3.9.2">
 <title data-rh="true">Development Guide | Clipboard Manager</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:url" content="https://tipsxBase.github.io/clipboard/docs/development"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" property="og:locale:alternate" content="zh_CN"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="Development Guide | Clipboard Manager"><meta data-rh="true" name="description" content="If you are a developer and want to contribute code to this project or build it yourself, please refer to the following guide."><meta data-rh="true" property="og:description" content="If you are a developer and want to contribute code to this project or build it yourself, please refer to the following guide."><link data-rh="true" rel="icon" href="/clipboard/img/logo.svg"><link data-rh="true" rel="canonical" href="https://tipsxBase.github.io/clipboard/docs/development"><link data-rh="true" rel="alternate" href="https://tipsxBase.github.io/clipboard/docs/development" hreflang="en"><link data-rh="true" rel="alternate" href="https://tipsxBase.github.io/clipboard/zh-CN/docs/development" hreflang="zh-CN"><link data-rh="true" rel="alternate" href="https://tipsxBase.github.io/clipboard/docs/development" hreflang="x-default"><script data-rh="true" type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Development Guide","item":"https://tipsxBase.github.io/clipboard/docs/development"}]}</script><link rel="stylesheet" href="/clipboard/assets/css/styles.9960f780.css">
-<script src="/clipboard/assets/js/runtime~main.b8f8e472.js" defer="defer"></script>
+<script src="/clipboard/assets/js/runtime~main.285c5629.js" defer="defer"></script>
 <script src="/clipboard/assets/js/main.e93c7a2f.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -15,6 +15,13 @@
 <p>If you are a developer and want to contribute code to this project or build it yourself, please refer to the following guide.</p>
 <h2 class="anchor anchorTargetStickyNavbar_yFIk" id="tech-stack">Tech Stack<a href="#tech-stack" class="hash-link" aria-label="Direct link to Tech Stack" title="Direct link to Tech Stack" translate="no">​</a></h2>
 <p>This project is built with a modern tech stack, balancing performance and development experience:</p>
+<ul>
+<li class=""><strong>Core Framework</strong>: <a href="https://v2.tauri.app/" target="_blank" rel="noopener noreferrer" class="">Tauri v2</a> (Rust + Webview)</li>
+<li class=""><strong>Frontend Framework</strong>: <a href="https://vuejs.org/" target="_blank" rel="noopener noreferrer" class="">Vue 3</a> + TypeScript</li>
+<li class=""><strong>Styling</strong>: <a href="https://tailwindcss.com/" target="_blank" rel="noopener noreferrer" class="">Tailwind CSS v4</a></li>
+<li class=""><strong>UI Components</strong>: <a href="https://www.radix-vue.com/" target="_blank" rel="noopener noreferrer" class="">Radix Vue</a> + <a href="https://lucide.dev/" target="_blank" rel="noopener noreferrer" class="">Lucide Icons</a></li>
+<li class=""><strong>Database</strong>: SQLite (via <code>rusqlite</code> driver)</li>
+</ul>
 <h2 class="anchor anchorTargetStickyNavbar_yFIk" id="recent-features--improvements">Recent Features &amp; Improvements<a href="#recent-features--improvements" class="hash-link" aria-label="Direct link to Recent Features &amp; Improvements" title="Direct link to Recent Features &amp; Improvements" translate="no">​</a></h2>
 <ul>
 <li class=""><strong>Async OCR Refactor</strong>: Windows and macOS OCR logic is now fully async, preventing deadlocks and database lock issues.</li>
@@ -27,7 +34,7 @@
 <p>Before starting, please ensure your development environment has the following tools installed:</p>
 <ol>
 <li class=""><strong>Rust</strong>: Please install the latest stable version via <a href="https://rustup.rs/" target="_blank" rel="noopener noreferrer" class="">rustup</a>.</li>
-<li class=""><strong>Node.js</strong>: Recommended v18 or higher.</li>
+<li class=""><strong>Node.js</strong>: Recommended v20 or higher.</li>
 <li class=""><strong>pnpm</strong>: Package manager (<code>npm install -g pnpm</code>).</li>
 <li class=""><strong>System Dependencies</strong>:<!-- -->
 <ul>

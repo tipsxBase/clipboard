@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="generator" content="Docusaurus v3.9.2">
 <title data-rh="true">开发指南 | Clipboard Manager</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:url" content="https://tipsxBase.github.io/clipboard/zh-CN/docs/development"><meta data-rh="true" property="og:locale" content="zh_CN"><meta data-rh="true" property="og:locale:alternate" content="en"><meta data-rh="true" name="docusaurus_locale" content="zh-CN"><meta data-rh="true" name="docsearch:language" content="zh-CN"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="开发指南 | Clipboard Manager"><meta data-rh="true" name="description" content="如果您是开发者，想要为本项目贡献代码或自行构建，请参考以下指南。"><meta data-rh="true" property="og:description" content="如果您是开发者，想要为本项目贡献代码或自行构建，请参考以下指南。"><link data-rh="true" rel="icon" href="/clipboard/zh-CN/img/logo.svg"><link data-rh="true" rel="canonical" href="https://tipsxBase.github.io/clipboard/zh-CN/docs/development"><link data-rh="true" rel="alternate" href="https://tipsxBase.github.io/clipboard/docs/development" hreflang="en"><link data-rh="true" rel="alternate" href="https://tipsxBase.github.io/clipboard/zh-CN/docs/development" hreflang="zh-CN"><link data-rh="true" rel="alternate" href="https://tipsxBase.github.io/clipboard/docs/development" hreflang="x-default"><script data-rh="true" type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"开发指南","item":"https://tipsxBase.github.io/clipboard/zh-CN/docs/development"}]}</script><link rel="stylesheet" href="/clipboard/zh-CN/assets/css/styles.9960f780.css">
-<script src="/clipboard/zh-CN/assets/js/runtime~main.9f3d527a.js" defer="defer"></script>
+<script src="/clipboard/zh-CN/assets/js/runtime~main.4efdac54.js" defer="defer"></script>
 <script src="/clipboard/zh-CN/assets/js/main.b3772cf0.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -26,7 +26,7 @@
 <p>在开始之前，请确保您的开发环境已安装以下工具：</p>
 <ol>
 <li class=""><strong>Rust</strong>: 请通过 <a href="https://rustup.rs/" target="_blank" rel="noopener noreferrer" class="">rustup</a> 安装最新稳定版。</li>
-<li class=""><strong>Node.js</strong>: 推荐 v18 或更高版本。</li>
+<li class=""><strong>Node.js</strong>: 推荐 v20 或更高版本。</li>
 <li class=""><strong>pnpm</strong>: 包管理工具 (<code>npm install -g pnpm</code>)。</li>
 <li class=""><strong>系统依赖</strong>:<!-- -->
 <ul>
@@ -40,11 +40,15 @@
 <li class="">
 <p><strong>克隆仓库</strong></p>
 <div class="language-bash codeBlockContainer_IdsR theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_Dw18"><pre tabindex="0" class="prism-code language-bash codeBlock_t9TE thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_AQRu"><span class="token-line" style="color:#393A34"><span class="token plain">git clone https://github.com/tipsxBase/clipboard.git</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">cd clipboard</span><br></span></code></pre></div></div>
-<pre tabindex="0" class="codeBlockStandalone_iqye thin-scrollbar codeBlockContainer_IdsR theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><code class="codeBlockLines_AQRu"></code></pre>
+</li>
+<li class="">
+<p><strong>安装依赖</strong></p>
+<div class="language-bash codeBlockContainer_IdsR theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_Dw18"><pre tabindex="0" class="prism-code language-bash codeBlock_t9TE thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_AQRu"><span class="token-line" style="color:#393A34"><span class="token plain">pnpm install</span><br></span></code></pre></div></div>
 </li>
 <li class="">
 <p><strong>启动开发模式</strong></p>
-<pre tabindex="0" class="codeBlockStandalone_iqye thin-scrollbar codeBlockContainer_IdsR theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><code class="codeBlockLines_AQRu"></code></pre>
+<p>此命令将同时启动前端开发服务器和 Tauri 后端，并启用热重载。</p>
+<div class="language-bash codeBlockContainer_IdsR theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_Dw18"><pre tabindex="0" class="prism-code language-bash codeBlock_t9TE thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_AQRu"><span class="token-line" style="color:#393A34"><span class="token plain">pnpm tauri dev</span><br></span></code></pre></div></div>
 </li>
 </ol>
 <h2 class="anchor anchorTargetStickyNavbar_yFIk" id="构建发布">构建发布<a href="#构建发布" class="hash-link" aria-label="构建发布的直接链接" title="构建发布的直接链接" translate="no">​</a></h2>
