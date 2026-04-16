@@ -24,6 +24,8 @@ defineProps<{
   open: boolean;
   updateInfo: UpdateAvailablePayload | null;
   downloadProgress: number;
+  downloadedBytes: number;
+  totalBytes: number;
   isDownloading: boolean;
   isInstalling: boolean;
   updateError: string | null;
@@ -82,7 +84,7 @@ const handleDownload = () => {
             </p>
             <Progress :value="downloadProgress" class="w-full" />
             <p class="text-sm text-muted-foreground text-center">
-              {{ downloadProgress }}%
+              {{ downloadProgress > 0 ? `${downloadProgress}%` : `${(downloadedBytes / 1024 / 1024).toFixed(1)} MB` }}
             </p>
           </div>
 

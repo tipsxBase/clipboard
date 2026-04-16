@@ -11,6 +11,8 @@ export interface UpdateAvailablePayload {
 
 export interface UpdateProgressPayload {
   percent: number;
+  downloaded?: number;
+  total?: number;
 }
 
 export function useUpdater() {
@@ -21,6 +23,8 @@ export function useUpdater() {
   const showUpdateDialog = ref(false);
   const updateInfo = ref<UpdateAvailablePayload | null>(null);
   const downloadProgress = ref(0);
+  const downloadedBytes = ref(0);
+  const totalBytes = ref(0);
   const isDownloading = ref(false);
   const isInstalling = ref(false);
   const updateError = ref<string | null>(null);
@@ -30,40 +34,33 @@ export function useUpdater() {
 
   onMounted(async () => {
     // Listen for update available (user clicked check update)
-    const unlistenAvailable = await listen<UpdateAvailablePayload>(
-      'update-available',
-      (event) => {
-        updateInfo.value = event.payload;
-        showUpdateDialog.value = true;
-        isDownloading.value = false;
-        isInstalling.value = false;
-        downloadProgress.value = 0;
-        updateError.value = null;
-      }
-    );
+    const unlistenAvailable = await listen<UpdateAvailablePayload>('update-available', (event) => {
+      updateInfo.value = event.payload;
+      showUpdateDialog.value = true;
+      isDownloading.value = false;
+      isInstalling.value = false;
+      downloadProgress.value = 0;
+      updateError.value = null;
+    });
 
     // Listen for update detected (startup/scheduled check)
-    const unlistenDetected = await listen<UpdateAvailablePayload>(
-      'update-detected',
-      (event) => {
-        updateInfo.value = event.payload;
-        // 显示 toast 通知用户有更新可用
-        showToast(
-          t('updater.newVersionDetected', {
-            version: event.payload.version,
-          })
-        );
-      }
-    );
+    const unlistenDetected = await listen<UpdateAvailablePayload>('update-detected', (event) => {
+      updateInfo.value = event.payload;
+      // 显示 toast 通知用户有更新可用
+      showToast(
+        t('updater.newVersionDetected', {
+          version: event.payload.version,
+        })
+      );
+    });
 
     // Listen for download progress
-    const unlistenProgress = await listen<UpdateProgressPayload>(
-      'update-progress',
-      (event) => {
-        downloadProgress.value = event.payload.percent;
-        isDownloading.value = true;
-      }
-    );
+    const unlistenProgress = await listen<UpdateProgressPayload>('update-progress', (event) => {
+      downloadProgress.value = event.payload.percent;
+      downloadedBytes.value = event.payload.downloaded || 0;
+      totalBytes.value = event.payload.total || 0;
+      isDownloading.value = true;
+    });
 
     // Listen for installing
     const unlistenInstalling = await listen('update-installing', () => {
@@ -72,12 +69,9 @@ export function useUpdater() {
     });
 
     // Listen for no update available
-    const unlistenNotAvailable = await listen<string>(
-      'update-not-available',
-      (event) => {
-        showToast(t('updater.noUpdateAvailable', { version: event.payload }));
-      }
-    );
+    const unlistenNotAvailable = await listen<string>('update-not-available', (event) => {
+      showToast(t('updater.noUpdateAvailable', { version: event.payload }));
+    });
 
     // Listen for update error
     const unlistenError = await listen<string>('update-error', (event) => {
@@ -105,17 +99,33 @@ export function useUpdater() {
 
   const closeDialog = () => {
     showUpdateDialog.value = false;
-    updateInfo.value = null;
+    // 不清除 updateInfo，保持状态提示用户有更新可用
     downloadProgress.value = 0;
+    downloadedBytes.value = 0;
+    totalBytes.value = 0;
     isDownloading.value = false;
     isInstalling.value = false;
     updateError.value = null;
   };
 
+  // 用户点击更新指示器打开对话框
+  const openUpdateDialog = () => {
+    if (updateInfo.value) {
+      showUpdateDialog.value = true;
+      isDownloading.value = false;
+      isInstalling.value = false;
+      updateError.value = null;
+    }
+  };
+
   // 用户确认下载更新
   const downloadAndInstall = async () => {
+    // 确保对话框显示下载状态
+    showUpdateDialog.value = true;
     isDownloading.value = true;
     downloadProgress.value = 0;
+    downloadedBytes.value = 0;
+    totalBytes.value = 0;
     updateError.value = null;
 
     try {
@@ -130,10 +140,13 @@ export function useUpdater() {
     showUpdateDialog,
     updateInfo,
     downloadProgress,
+    downloadedBytes,
+    totalBytes,
     isDownloading,
     isInstalling,
     updateError,
     closeDialog,
     downloadAndInstall,
+    openUpdateDialog,
   };
 }

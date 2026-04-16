@@ -15,11 +15,14 @@ const {
   showUpdateDialog,
   updateInfo,
   downloadProgress,
+  downloadedBytes,
+  totalBytes,
   isDownloading,
   isInstalling,
   updateError,
   closeDialog,
   downloadAndInstall,
+  openUpdateDialog,
 } = useUpdater();
 
 onMounted(() => {
@@ -31,7 +34,11 @@ onMounted(() => {
 <template>
   <PopupWindow v-if="currentWindowLabel === 'popup'" />
   <ScreenshotWindow v-else-if="currentWindowLabel.startsWith('screenshot')" />
-  <MainWindow v-else />
+  <MainWindow
+    v-else
+    :update-info="updateInfo"
+    @open-update-dialog="openUpdateDialog"
+  />
   <ConfirmProvider />
   <PermissionDialog v-if="currentWindowLabel === 'main'" />
   <UpdateDialog
@@ -39,6 +46,8 @@ onMounted(() => {
     :open="showUpdateDialog"
     :update-info="updateInfo"
     :download-progress="downloadProgress"
+    :downloaded-bytes="downloadedBytes"
+    :total-bytes="totalBytes"
     :is-downloading="isDownloading"
     :is-installing="isInstalling"
     :update-error="updateError"

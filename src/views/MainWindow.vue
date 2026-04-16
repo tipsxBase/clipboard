@@ -91,6 +91,15 @@ import RuleEditor from '@/components/RuleEditor.vue';
 import { useRules } from '@/composables/useRules';
 import type { Rule } from '@/types';
 
+// Props for update notification
+const props = defineProps<{
+  updateInfo: { version: string; current_version: string } | null;
+}>();
+
+const emit = defineEmits<{
+  (e: 'open-update-dialog'): void;
+}>();
+
 const { t } = useI18n();
 const { toastMessage, showToast } = useToast();
 const { formatTimeAgo } = useTimeAgo();
@@ -1126,6 +1135,18 @@ onUnmounted(() => {
           ><span class="bg-muted px-1 rounded">Space</span>
           {{ t('actions.preview').split(' ')[0] }}</span
         >
+      </div>
+      <!-- Version with update indicator -->
+      <div class="flex items-center gap-1">
+        <button
+          v-if="props.updateInfo"
+          @click="emit('open-update-dialog')"
+          class="flex items-center gap-1 px-1.5 rounded-full bg-green-500/10 text-green-600 hover:bg-green-500/20 transition-colors cursor-pointer"
+        >
+          <span>v{{ props.updateInfo.current_version }}</span>
+          <ArrowUpDown class="w-3 h-3" />
+        </button>
+        <span v-else class="opacity-60">v{{ props.updateInfo?.current_version || '0.4.1' }}</span>
       </div>
       <div class="flex items-center gap-1">
         <span>{{ config.shortcut }}</span>

@@ -133,7 +133,16 @@ pub fn run() {
                                 _update.version,
                                 update_check_handle.package_info().version
                             );
+                            // 保存更新信息到 state
+                            let state = update_check_handle.state::<AppState>();
+                            if let Ok(mut update_info) = state.update_info.lock() {
+                                *update_info = Some(crate::state::UpdateInfo {
+                                    version: _update.version.to_string(),
+                                    current_version: update_check_handle.package_info().version.to_string(),
+                                });
+                            }
                             // 更新托盘菜单显示更新提示
+                            let _ = crate::tray::update_version_menu_item(&update_check_handle, true);
                             let _ = update_check_handle.emit(
                                 "update-detected",
                                 serde_json::json!({
@@ -167,6 +176,16 @@ pub fn run() {
                                     "Scheduled check found update: {}",
                                     _update.version
                                 );
+                                // 保存更新信息到 state
+                                let state = scheduled_update_handle.state::<AppState>();
+                                if let Ok(mut update_info) = state.update_info.lock() {
+                                    *update_info = Some(crate::state::UpdateInfo {
+                                        version: _update.version.to_string(),
+                                        current_version: scheduled_update_handle.package_info().version.to_string(),
+                                    });
+                                }
+                                // 更新托盘菜单显示更新提示
+                                let _ = crate::tray::update_version_menu_item(&scheduled_update_handle, true);
                                 let _ = scheduled_update_handle.emit(
                                     "update-detected",
                                     serde_json::json!({
@@ -197,9 +216,11 @@ pub fn run() {
                 paste_stack: paste_stack_state.clone(),
                 current_captures: current_captures_state.clone(),
                 pause_item: Arc::new(Mutex::new(None)),
+                version_item: Arc::new(Mutex::new(None)),
                 file_manager: file_manager.clone(),
                 storage_paths: Arc::new(storage_paths),
                 rules_engine: rules_engine.clone(),
+                update_info: Arc::new(Mutex::new(None)),
             });
 
             // 注册截图快捷键
