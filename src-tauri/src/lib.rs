@@ -109,6 +109,76 @@ pub fn run() {
             // 启动时清理过期文件（超过 24 小时）
             let _ = file_manager.cleanup_expired_files(std::time::Duration::from_secs(24 * 3600));
 
+            // 启动时自动检查更新（延迟 10 秒避免阻塞启动）
+            // 只通知用户有更新，不自动下载
+            let update_check_handle = handle.clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+                log::info!("Auto checking for updates on startup...");
+
+                if let Ok(updater) = update_check_handle.updater() {
+                    match updater.check().await {
+                        Ok(Some(_update)) => {
+                            // 只通知用户有更新可用，不自动下载
+                            // 用户可以从托盘点击查看详情并手动更新
+                            log::info!(
+                                "Update available on startup: {} (current: {})",
+                                _update.version,
+                                update_check_handle.package_info().version
+                            );
+                            // 更新托盘菜单显示更新提示
+                            let _ = update_check_handle.emit(
+                                "update-detected",
+                                serde_json::json!({
+                                    "version": _update.version.to_string(),
+                                    "current_version": update_check_handle.package_info().version.to_string(),
+                                }),
+                            );
+                        }
+                        Ok(None) => {
+                            log::info!("App is up to date on startup");
+                        }
+                        Err(e) => {
+                            log::warn!("Startup update check failed: {}", e);
+                        }
+                    }
+                }
+            });
+
+            // 定时检查更新（每天一次）
+            let scheduled_update_handle = handle.clone();
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    // 每 24 小时检查一次
+                    tokio::time::sleep(std::time::Duration::from_secs(24 * 60 * 60)).await;
+                    log::info!("Scheduled update check...");
+
+                    if let Ok(updater) = scheduled_update_handle.updater() {
+                        match updater.check().await {
+                            Ok(Some(_update)) => {
+                                log::info!(
+                                    "Scheduled check found update: {}",
+                                    _update.version
+                                );
+                                let _ = scheduled_update_handle.emit(
+                                    "update-detected",
+                                    serde_json::json!({
+                                        "version": _update.version.to_string(),
+                                        "current_version": scheduled_update_handle.package_info().version.to_string(),
+                                    }),
+                                );
+                            }
+                            Ok(None) => {
+                                log::info!("Scheduled check: app is up to date");
+                            }
+                            Err(e) => {
+                                log::warn!("Scheduled update check failed: {}", e);
+                            }
+                        }
+                    }
+                }
+            });
+
             // 将状态交给 Tauri 管理
             app.manage(AppState {
                 db: db.clone(),
@@ -301,24 +371,46 @@ pub fn run() {
                         }
                     }
                     "check_update" => {
+                        // 打开主窗口显示更新对话框
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+
                         let handle = app.clone();
                         tauri::async_runtime::spawn(async move {
                             if let Ok(updater) = handle.updater() {
+                                log::info!("User requested update check...");
                                 match updater.check().await {
-                                    Ok(Some(update)) => {
-                                        if let Err(e) =
-                                            update.download_and_install(|_, _| {}, || {}).await
-                                        {
-                                            log::error!("Failed to install update: {}", e);
-                                        }
+                                    Ok(Some(_update)) => {
+                                        log::info!(
+                                            "Update available: {} (current: {})",
+                                            _update.version,
+                                            handle.package_info().version
+                                        );
+                                        // 只通知前端，不自动下载，让用户选择
+                                        let _ = handle.emit(
+                                            "update-available",
+                                            serde_json::json!({
+                                                "version": _update.version.to_string(),
+                                                "current_version": handle.package_info().version.to_string(),
+                                            }),
+                                        );
                                     }
                                     Ok(None) => {
                                         log::info!("No update available");
+                                        let _ = handle.emit(
+                                            "update-not-available",
+                                            handle.package_info().version.to_string(),
+                                        );
                                     }
                                     Err(e) => {
                                         log::error!("Failed to check for updates: {}", e);
+                                        let _ = handle.emit("update-error", e.to_string());
                                     }
                                 }
+                            } else {
+                                log::error!("Failed to get updater");
                             }
                         });
                     }
@@ -384,6 +476,7 @@ pub fn run() {
             add_rule,
             update_rule,
             delete_rule,
+            download_and_install_update,
         ])
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::CloseRequested { api, .. } => {

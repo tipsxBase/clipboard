@@ -835,3 +835,56 @@ pub fn get_temp_directory(state: tauri::State<AppState>) -> String {
         .to_string_lossy()
         .to_string()
 }
+
+/// 下载并安装更新（用户确认后调用）
+#[tauri::command]
+pub async fn download_and_install_update(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri_plugin_updater::UpdaterExt;
+
+    log::info!("User confirmed to download and install update...");
+
+    let updater = app.updater().map_err(|e| e.to_string())?;
+
+    // 重新检查获取更新信息
+    let update = updater
+        .check()
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or("No update available")?;
+
+    log::info!("Downloading update: {}", update.version);
+
+    // 下载并安装，带进度通知
+    update
+        .download_and_install(
+            |downloaded, total| {
+                let percent = total
+                    .map(|t| {
+                        if t > 0 {
+                            (downloaded as f64 / t as f64 * 100.0) as u32
+                        } else {
+                            0
+                        }
+                    })
+                    .unwrap_or(0);
+                log::info!("Download progress: {}%", percent);
+                let _ = app.emit(
+                    "update-progress",
+                    serde_json::json!({ "percent": percent }),
+                );
+            },
+            || {
+                log::info!("Update downloaded, installing...");
+                let _ = app.emit("update-installing", ());
+            },
+        )
+        .await
+        .map_err(|e| {
+            log::error!("Failed to install update: {}", e);
+            let _ = app.emit("update-error", e.to_string());
+            e.to_string()
+        })?;
+
+    log::info!("Update installed successfully");
+    Ok(())
+}

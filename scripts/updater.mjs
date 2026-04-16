@@ -142,9 +142,17 @@ async function updater() {
     }
 
     if (platformKey) {
+      // FIX: Manually construct the correct URL using the tag name
+      // Do NOT use browser_download_url from draft release (it returns temporary untagged URLs)
+      const correctUrl = `https://github.com/${options.owner}/${options.repo}/releases/download/${tagName}/${bundleName}`;
+
+      console.log(`Platform: ${platformKey}`);
+      console.log(`Bundle: ${bundleName}`);
+      console.log(`URL (constructed): ${correctUrl}`);
+
       latestJson.platforms[platformKey] = {
         signature: signature,
-        url: bundleAsset.browser_download_url,
+        url: correctUrl,
       };
     } else {
       console.warn(`Could not determine platform for ${bundleName}`);
