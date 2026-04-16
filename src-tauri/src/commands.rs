@@ -850,6 +850,9 @@ pub async fn download_and_install_update(app: tauri::AppHandle) -> Result<(), St
 
     log::info!("Downloading update: {}", update.version);
 
+    // Track last reported percent to avoid excessive logging
+    let mut last_percent: u32 = 0;
+
     // 下载并安装，带进度通知
     update
         .download_and_install(
@@ -859,14 +862,25 @@ pub async fn download_and_install_update(app: tauri::AppHandle) -> Result<(), St
                         if t > 0 {
                             (downloaded as f64 / t as f64 * 100.0) as u32
                         } else {
+                            // If total is unknown, show downloaded bytes in MB
                             0
                         }
                     })
                     .unwrap_or(0);
-                log::info!("Download progress: {}%", percent);
+
+                // Only log when percent changes by at least 5%
+                if percent >= last_percent + 5 || percent == 100 {
+                    log::info!("Download progress: {}%", percent);
+                    last_percent = percent;
+                }
+
                 let _ = app.emit(
                     "update-progress",
-                    serde_json::json!({ "percent": percent }),
+                    serde_json::json!({
+                        "percent": percent,
+                        "downloaded": downloaded,
+                        "total": total
+                    }),
                 );
             },
             || {
