@@ -16,6 +16,8 @@ const { t } = useI18n();
 const showPermissionDialog = ref(false);
 const isMacOS = ref(false);
 
+const PERMISSION_ACKNOWLEDGED_KEY = 'screen_recording_permission_acknowledged';
+
 onMounted(async () => {
   const userAgent = navigator.userAgent.toLowerCase();
   isMacOS.value = userAgent.includes('mac');
@@ -26,6 +28,12 @@ onMounted(async () => {
 });
 
 const checkPermission = async () => {
+  // Check if user has already acknowledged the permission dialog
+  const acknowledged = localStorage.getItem(PERMISSION_ACKNOWLEDGED_KEY);
+  if (acknowledged === 'true') {
+    return; // User already acknowledged, don't show again
+  }
+
   try {
     const hasPermission = await invoke<boolean>('check_screen_recording_permission');
     if (!hasPermission) {
@@ -38,6 +46,8 @@ const checkPermission = async () => {
 
 const dismiss = () => {
   showPermissionDialog.value = false;
+  // Remember that user has acknowledged the dialog
+  localStorage.setItem(PERMISSION_ACKNOWLEDGED_KEY, 'true');
 };
 </script>
 

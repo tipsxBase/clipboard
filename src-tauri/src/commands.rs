@@ -454,12 +454,12 @@ pub fn delete_item(
 }
 
 #[tauri::command]
-pub fn toggle_sensitive(state: tauri::State<AppState>, index: usize) -> Result<bool, String> {
-    match state.db.toggle_sensitive(index as i64) {
+pub fn toggle_sensitive(state: tauri::State<AppState>, id: i64) -> Result<bool, String> {
+    match state.db.toggle_sensitive(id) {
         Ok(new_state) => {
             log::info!(
                 "Toggled sensitive state for item {} to {}",
-                index,
+                id,
                 new_state
             );
             Ok(new_state)
@@ -472,10 +472,10 @@ pub fn toggle_sensitive(state: tauri::State<AppState>, index: usize) -> Result<b
 }
 
 #[tauri::command]
-pub fn toggle_pin(state: tauri::State<AppState>, index: usize) -> Result<bool, String> {
-    match state.db.toggle_pin(index as i64) {
+pub fn toggle_pin(state: tauri::State<AppState>, id: i64) -> Result<bool, String> {
+    match state.db.toggle_pin(id) {
         Ok(new_state) => {
-            log::info!("Toggled pin state for item {} to {}", index, new_state);
+            log::info!("Toggled pin state for item {} to {}", id, new_state);
             Ok(new_state)
         }
         Err(e) => {

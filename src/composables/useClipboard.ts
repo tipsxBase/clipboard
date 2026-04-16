@@ -277,14 +277,17 @@ export function useClipboard() {
 
   async function toggleSensitive(index: number) {
     const item = filteredHistory.value[index];
-    const realIndex = history.value.indexOf(item);
 
-    if (realIndex !== -1) {
+    if (item && item.id) {
       try {
         const newState = await invoke<boolean>('toggle_sensitive', {
-          index: realIndex,
+          id: item.id,
         });
-        history.value[realIndex].is_sensitive = newState as boolean;
+        // Update the item in history
+        const historyItem = history.value.find((h) => h.id === item.id);
+        if (historyItem) {
+          historyItem.is_sensitive = newState as boolean;
+        }
         showToast(newState ? t('toast.markedSensitive') : t('toast.unmarkedSensitive'));
       } catch (e) {
         console.error('Failed to toggle sensitive:', e);
@@ -294,14 +297,17 @@ export function useClipboard() {
 
   async function togglePin(index: number) {
     const item = filteredHistory.value[index];
-    const realIndex = history.value.indexOf(item);
 
-    if (realIndex !== -1) {
+    if (item && item.id) {
       try {
         const newState = await invoke<boolean>('toggle_pin', {
-          index: realIndex,
+          id: item.id,
         });
-        history.value[realIndex].is_pinned = newState as boolean;
+        // Update the item in history
+        const historyItem = history.value.find((h) => h.id === item.id);
+        if (historyItem) {
+          historyItem.is_pinned = newState as boolean;
+        }
         // Reload history to reflect sorting changes
         await loadHistory(true);
         showToast(newState ? t('toast.pinned') : t('toast.unpinned'));
