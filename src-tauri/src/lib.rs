@@ -91,14 +91,16 @@ pub fn run() {
                     // Set collection behavior to show on fullscreen spaces
                     use objc2::rc::Retained;
                     use objc2_app_kit::{NSWindow, NSWindowCollectionBehavior};
-                    let ns_window = window.ns_window().expect("Failed to get NSWindow");
-                    let ns_window_ptr = ns_window as *mut NSWindow;
-                    if let Some(ns_window) = unsafe { Retained::retain(ns_window_ptr) } {
-                        ns_window.setCollectionBehavior(
-                            NSWindowCollectionBehavior::CanJoinAllSpaces
-                                | NSWindowCollectionBehavior::FullScreenAuxiliary
-                                | NSWindowCollectionBehavior::IgnoresCycle,
-                        );
+                    if let Ok(ns_window) = window.ns_window() {
+                        let ns_window_ptr = ns_window as *mut NSWindow;
+                        unsafe {
+                            let ns_window: Retained<NSWindow> = Retained::retain(ns_window_ptr).unwrap();
+                            ns_window.setCollectionBehavior(
+                                NSWindowCollectionBehavior::CanJoinAllSpaces
+                                    | NSWindowCollectionBehavior::FullScreenAuxiliary
+                                    | NSWindowCollectionBehavior::IgnoresCycle,
+                            );
+                        }
                     }
                 }
             }
@@ -297,6 +299,24 @@ pub fn run() {
                                     } else {
                                         // Fallback to center if mouse position fails
                                         let _ = window.center();
+                                    }
+
+                                    // Ensure window can show on fullscreen spaces
+                                    #[cfg(target_os = "macos")]
+                                    {
+                                        use objc2::rc::Retained;
+                                        use objc2_app_kit::{NSWindow, NSWindowCollectionBehavior};
+                                        if let Ok(ns_window) = window.ns_window() {
+                                            let ns_window_ptr = ns_window as *mut NSWindow;
+                                            unsafe {
+                                                let ns_window: Retained<NSWindow> = Retained::retain(ns_window_ptr).unwrap();
+                                                ns_window.setCollectionBehavior(
+                                                    NSWindowCollectionBehavior::CanJoinAllSpaces
+                                                        | NSWindowCollectionBehavior::FullScreenAuxiliary
+                                                        | NSWindowCollectionBehavior::IgnoresCycle,
+                                                );
+                                            }
+                                        }
                                     }
 
                                     let _ = window.show();
