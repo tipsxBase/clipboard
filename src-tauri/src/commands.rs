@@ -416,10 +416,10 @@ pub fn add_to_history(
 #[tauri::command]
 pub fn delete_item(
     app: tauri::AppHandle,
-    index: usize,
+    id: i64,
     state: tauri::State<AppState>,
 ) -> Result<(), String> {
-    match state.db.delete_item(index as i64) {
+    match state.db.delete_item(id) {
         Ok(Some(item)) => {
             if item.kind == "image" {
                 let path = std::path::Path::new(&item.content);
@@ -433,7 +433,7 @@ pub fn delete_item(
             }
         }
         Ok(None) => {
-            log::warn!("Item at index {} not found", index);
+            log::warn!("Item with id {} not found", id);
         }
         Err(e) => {
             log::error!("Failed to delete item from DB: {}", e);
@@ -449,7 +449,7 @@ pub fn delete_item(
     if let Err(e) = update_tray_menu(&app, &history) {
         log::error!("Failed to update tray menu after delete: {}", e);
     }
-    log::info!("Deleted item at index {}", index);
+    log::info!("Deleted item with id {}", id);
     Ok(())
 }
 

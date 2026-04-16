@@ -226,11 +226,10 @@ export function useClipboard() {
     if (!confirmed) return;
 
     const item = filteredHistory.value[index];
-    const realIndex = history.value.indexOf(item);
 
-    if (realIndex !== -1) {
+    if (item && item.id) {
       try {
-        await invoke('delete_item', { index: realIndex });
+        await invoke('delete_item', { id: item.id });
         await loadHistory(true);
         showToast(t('toast.deleted'));
       } catch (e) {
