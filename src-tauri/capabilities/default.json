@@ -6,9 +6,18 @@
   "permissions": [
     "core:default",
     "opener:default",
+    {
+      "identifier": "opener:allow-open-path",
+      "allow": [{ "path": "$HOME/.clipboard-manager/**" }]
+    },
+    "opener:allow-reveal-item-in-dir",
     "store:default",
     "clipboard-manager:default",
     "fs:allow-appdata-read-recursive",
+    {
+      "identifier": "fs:allow-read",
+      "allow": [{ "path": "$HOME/.clipboard-manager/**" }]
+    },
     "global-shortcut:default",
     "core:window:allow-hide",
     "core:window:allow-close",

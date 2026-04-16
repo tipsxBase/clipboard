@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref, watch } from 'vue';
 import {
   DropdownMenuRoot,
   DropdownMenuTrigger,
@@ -18,10 +18,19 @@ const props = defineProps<{
   onActionDone?: () => void;
 }>();
 
+const emit = defineEmits<{
+  (e: 'menu-open', value: boolean): void;
+}>();
+
 const { t } = useI18n();
 const { getActionsForItem, executeAction } = useQuickActions();
 
 const actions = computed(() => getActionsForItem(props.item));
+const isOpen = ref(false);
+
+watch(isOpen, (value) => {
+  emit('menu-open', value);
+});
 
 async function handleAction(action: (typeof actions.value)[0]) {
   const ok = await executeAction(action, props.item);
@@ -32,7 +41,7 @@ async function handleAction(action: (typeof actions.value)[0]) {
 </script>
 
 <template>
-  <DropdownMenuRoot v-if="actions.length > 0">
+  <DropdownMenuRoot v-if="actions.length > 0" v-model:open="isOpen">
     <DropdownMenuTrigger as-child>
       <Button
         size="icon"

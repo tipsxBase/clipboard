@@ -13,7 +13,6 @@ mod tray;
 mod utils;
 
 use clipboard_master::Master;
-use std::fs;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use tauri::tray::TrayIconBuilder;
@@ -41,20 +40,14 @@ pub fn run() {
         .ensure_dirs()
         .expect("Failed to create storage directories");
 
-    let config_path = storage_paths.config_path();
-    let config = if let Ok(content) = fs::read_to_string(&config_path) {
-        serde_json::from_str::<AppConfig>(&content).unwrap_or_default()
-    } else {
-        AppConfig::default()
-    };
-
     let db_path = storage_paths.db_path();
     let key_path = storage_paths.key_path();
     let crypto = Arc::new(Crypto::new(&key_path));
     let db = Arc::new(Database::new(&db_path, crypto).expect("Failed to initialize database"));
 
-    let rules_path = storage_paths.rules_path();
-    let rules_engine = Arc::new(rules::RulesEngine::new(&rules_path));
+    // Load config from database
+    let config = AppConfig::from_db(&db);
+    let rules_engine = Arc::new(rules::RulesEngine::new(db.clone()));
 
     let shortcut_key = config.shortcut.clone();
     let screenshot_shortcut_key = config.screenshot_shortcut.clone();
@@ -182,7 +175,6 @@ pub fn run() {
             // 将状态交给 Tauri 管理
             app.manage(AppState {
                 db: db.clone(),
-                config_path: config_path.clone(),
                 config: config_arc.clone(),
                 is_paused: is_paused_state.clone(),
                 last_app_change: last_app_change_state.clone(),

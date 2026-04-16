@@ -49,19 +49,9 @@ impl StoragePaths {
         &self.root
     }
 
-    /// Path to `config.json`.
-    pub fn config_path(&self) -> PathBuf {
-        self.root.join("config.json")
-    }
-
-    /// Path to `rules.json`.
-    pub fn rules_path(&self) -> PathBuf {
-        self.root.join("rules.json")
-    }
-
-    /// Path to `history.db`.
+    /// Path to `clipboard.clipdb`.
     pub fn db_path(&self) -> PathBuf {
-        self.root.join("history.db")
+        self.root.join("clipboard.clipdb")
     }
 
     /// Path to `secret.key`.
@@ -93,7 +83,6 @@ mod tests {
     fn paths_are_under_root() {
         let sp = StoragePaths::new();
         let root = sp.root().clone();
-        assert!(sp.config_path().starts_with(&root));
         assert!(sp.db_path().starts_with(&root));
         assert!(sp.key_path().starts_with(&root));
         assert!(sp.images_dir().starts_with(&root));
@@ -109,8 +98,7 @@ mod tests {
     #[test]
     fn expected_filenames() {
         let sp = StoragePaths::new();
-        assert_eq!(sp.config_path().file_name().unwrap(), "config.json");
-        assert_eq!(sp.db_path().file_name().unwrap(), "history.db");
+        assert_eq!(sp.db_path().file_name().unwrap(), "clipboard.clipdb");
         assert_eq!(sp.key_path().file_name().unwrap(), "secret.key");
     }
 }

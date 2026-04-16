@@ -419,7 +419,7 @@ pub fn delete_item(
     index: usize,
     state: tauri::State<AppState>,
 ) -> Result<(), String> {
-    match state.db.delete_item(index) {
+    match state.db.delete_item(index as i64) {
         Ok(Some(item)) => {
             if item.kind == "image" {
                 let path = std::path::Path::new(&item.content);
@@ -455,7 +455,7 @@ pub fn delete_item(
 
 #[tauri::command]
 pub fn toggle_sensitive(state: tauri::State<AppState>, index: usize) -> Result<bool, String> {
-    match state.db.toggle_sensitive(index) {
+    match state.db.toggle_sensitive(index as i64) {
         Ok(new_state) => {
             log::info!(
                 "Toggled sensitive state for item {} to {}",
@@ -473,7 +473,7 @@ pub fn toggle_sensitive(state: tauri::State<AppState>, index: usize) -> Result<b
 
 #[tauri::command]
 pub fn toggle_pin(state: tauri::State<AppState>, index: usize) -> Result<bool, String> {
-    match state.db.toggle_pin(index) {
+    match state.db.toggle_pin(index as i64) {
         Ok(new_state) => {
             log::info!("Toggled pin state for item {} to {}", index, new_state);
             Ok(new_state)
@@ -566,12 +566,12 @@ pub fn get_rules(state: tauri::State<AppState>) -> Vec<Rule> {
 
 #[tauri::command]
 pub fn add_rule(state: tauri::State<AppState>, rule: Rule) -> Result<(), String> {
-    state.rules_engine.add_rule(rule)
+    state.rules_engine.add_rule(&rule)
 }
 
 #[tauri::command]
 pub fn update_rule(state: tauri::State<AppState>, rule: Rule) -> Result<(), String> {
-    state.rules_engine.update_rule(rule)
+    state.rules_engine.update_rule(&rule)
 }
 
 #[tauri::command]
@@ -592,7 +592,6 @@ pub fn save_config(
     max_history_size: usize,
     language: String,
     theme: String,
-    sensitive_apps: Vec<String>,
     compact_mode: bool,
     clear_pinned_on_clear: bool,
     clear_collected_on_clear: bool,
@@ -617,7 +616,6 @@ pub fn save_config(
         max_history_size,
         language: language.clone(),
         theme: theme.clone(),
-        sensitive_apps,
         compact_mode,
         clear_pinned_on_clear,
         clear_collected_on_clear,
@@ -627,12 +625,10 @@ pub fn save_config(
         screenshot_save_action: screenshot_save_action.clone(),
     };
 
-    // Save to file
-    if let Ok(json) = serde_json::to_string_pretty(&new_config) {
-        if let Err(e) = fs::write(&state.config_path, json) {
-            log::error!("Failed to save config file: {}", e);
-            return Err(e.to_string());
-        }
+    // Save to database
+    if let Err(e) = new_config.save_to_db(&state.db) {
+        log::error!("Failed to save config to database: {}", e);
+        return Err(e);
     }
 
     // Update state

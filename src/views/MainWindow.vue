@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, watch } from 'vue';
+import { onMounted, onUnmounted, ref, watch, reactive } from 'vue';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -26,7 +26,6 @@ import {
   Plus,
   Pin,
   PinOff,
-  Ban,
   Folder,
   FolderPlus,
   Hash,
@@ -209,7 +208,6 @@ const {
   tempMaxSize,
   tempLanguage,
   tempTheme,
-  tempSensitiveApps,
   tempCompactMode,
   tempClearPinnedOnClear,
   tempClearCollectedOnClear,
@@ -236,6 +234,21 @@ const { rules, loadRules, addRule, updateRule, deleteRule, toggleRuleEnabled } =
 const showRules = ref(false);
 const editingRuleData = ref<Rule | null>(null);
 const showRuleEditor = ref(false);
+
+// Track which items have their quick action menu open
+const openMenuItems = reactive(new Set<number>());
+
+function handleMenuOpen(itemId: number, isOpen: boolean) {
+  if (isOpen) {
+    openMenuItems.add(itemId);
+  } else {
+    openMenuItems.delete(itemId);
+  }
+}
+
+function isMenuOpen(itemId: number) {
+  return openMenuItems.has(itemId);
+}
 
 function openRuleEditor(rule?: Rule) {
   editingRuleData.value = rule || null;
@@ -310,7 +323,6 @@ const formSchema = toTypedSchema(
     max_history_size: z.number().min(5).max(1000),
     language: z.string(),
     theme: z.string(),
-    sensitive_apps: z.array(z.string()),
     compact_mode: z.boolean(),
     clear_pinned_on_clear: z.boolean(),
     clear_collected_on_clear: z.boolean(),
@@ -328,7 +340,6 @@ const form = useForm({
     max_history_size: tempMaxSize.value,
     language: tempLanguage.value,
     theme: tempTheme.value,
-    sensitive_apps: tempSensitiveApps.value,
     compact_mode: tempCompactMode.value,
     clear_pinned_on_clear: tempClearPinnedOnClear.value,
     clear_collected_on_clear: tempClearCollectedOnClear.value,
@@ -344,7 +355,6 @@ const onSubmit = form.handleSubmit(async (values) => {
   tempMaxSize.value = values.max_history_size;
   tempLanguage.value = values.language;
   tempTheme.value = values.theme;
-  tempSensitiveApps.value = values.sensitive_apps;
   tempCompactMode.value = values.compact_mode;
   tempClearPinnedOnClear.value = values.clear_pinned_on_clear;
   tempClearCollectedOnClear.value = values.clear_collected_on_clear;
@@ -364,7 +374,6 @@ watch(showSettings, (isOpen) => {
         max_history_size: tempMaxSize.value,
         language: tempLanguage.value,
         theme: tempTheme.value,
-        sensitive_apps: [...tempSensitiveApps.value],
         compact_mode: tempCompactMode.value,
         clear_pinned_on_clear: tempClearPinnedOnClear.value,
         clear_collected_on_clear: tempClearCollectedOnClear.value,
@@ -376,7 +385,6 @@ watch(showSettings, (isOpen) => {
   }
 });
 
-const newAppInput = ref('');
 const showClearConfirm = ref(false);
 const showCollections = ref(false);
 const newCollectionName = ref('');
@@ -453,24 +461,6 @@ async function handleSaveCollection() {
   editingCollection.value = null;
 }
 
-function addSensitiveApp(appName?: string) {
-  const app = appName || newAppInput.value.trim();
-  if (app) {
-    const currentApps = form.values.sensitive_apps || [];
-    if (!currentApps.includes(app)) {
-      form.setFieldValue('sensitive_apps', [...currentApps, app]);
-      tempSensitiveApps.value.push(app);
-      if (appName) {
-        // If added via button, save immediately
-        config.value.sensitive_apps = [...tempSensitiveApps.value];
-        saveConfig();
-        toastMessage.value = t('settings.appBlocked', { app });
-      }
-    }
-    if (!appName) newAppInput.value = '';
-  }
-}
-
 // function handleDragStart(e: DragEvent, item: ClipboardItem) {
 //   if (e.dataTransfer) {
 //     e.dataTransfer.effectAllowed = "copy";
@@ -531,15 +521,6 @@ function getFilterIcon(filter: string) {
   }
 }
 
-function removeSensitiveApp(app: string) {
-  const currentApps = form.values.sensitive_apps || [];
-  form.setFieldValue(
-    'sensitive_apps',
-    currentApps.filter((a) => a !== app)
-  );
-  tempSensitiveApps.value = tempSensitiveApps.value.filter((a) => a !== app);
-}
-
 function handleKeydown(e: KeyboardEvent) {
   // Ignore keydown events coming from input elements or when dialogs are open
   const target = e.target as HTMLElement;
@@ -593,11 +574,15 @@ onMounted(async () => {
   window.addEventListener('keydown', handleKeydown);
 
   // Listen for rule-applied events
-  await listen('rule-applied', (event: { payload: { rule_name: string; action: string } }) => {
-    toastMessage.value = t('rules.ruleApplied', {
-      name: event.payload.rule_name,
-      action: event.payload.action,
-    });
+  await listen('rule-applied', (event: { payload: { rule?: string; rules?: string[]; action: string } }) => {
+    // Handle both single rule (ignore) and multiple rules (modify) formats
+    const name = event.payload.rule || (event.payload.rules && event.payload.rules[0]) || '';
+    if (name) {
+      showToast(t('rules.ruleApplied', {
+        name,
+        action: event.payload.action,
+      }));
+    }
   });
 
   // Listen for screenshot errors (from global shortcut path)
@@ -1021,10 +1006,11 @@ onUnmounted(() => {
 
           <!-- Hover Actions -->
           <div
-            class="absolute right-2 top-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-background/80 backdrop-blur-sm rounded-md p-0.5 shadow-sm border border-border"
+            class="absolute right-2 top-2 flex gap-1 bg-background/80 backdrop-blur-sm rounded-md p-0.5 shadow-sm border border-border transition-opacity"
+            :class="isMenuOpen(item.id!) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
             @click.stop
           >
-            <QuickActionMenu :item="item" :on-action-done="() => loadHistory(true)" />
+            <QuickActionMenu :item="item" :on-action-done="() => loadHistory(true)" @menu-open="(v) => handleMenuOpen(item.id!, v)" />
             <Button
               v-if="item.kind !== 'image' && !item.is_sensitive"
               size="icon"
@@ -1044,16 +1030,6 @@ onUnmounted(() => {
               @click.stop="openEditor(item, true)"
             >
               <NotepadText class="w-3.5 h-3.5" />
-            </Button>
-            <Button
-              v-if="item.source_app"
-              @click.stop="addSensitiveApp(item.source_app)"
-              size="icon"
-              variant="ghost"
-              class="h-6 w-6 text-muted-foreground hover:text-destructive"
-              :title="t('actions.blockApp', { app: item.source_app })"
-            >
-              <Ban class="w-3.5 h-3.5" />
             </Button>
             <Button
               @click.stop="itemToAddToCollection = item"
@@ -1597,49 +1573,6 @@ onUnmounted(() => {
                 </FormControl>
               </FormItem>
             </FormField>
-
-            <!-- Sensitive Apps -->
-            <div class="col-span-2">
-              <label
-                class="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2 block"
-              >
-                {{ t('settings.sensitiveApps') }}
-              </label>
-              <div class="space-y-2">
-                <div class="flex gap-2">
-                  <Input
-                    v-model="newAppInput"
-                    :placeholder="t('settings.appNamePlaceholder')"
-                    @keydown.enter="addSensitiveApp"
-                  />
-                  <Button
-                    @click="addSensitiveApp"
-                    type="button"
-                    size="icon"
-                    variant="secondary"
-                    class="shrink-0"
-                  >
-                    <Plus class="w-4 h-4" />
-                  </Button>
-                </div>
-                <div class="max-h-32 overflow-y-auto custom-scrollbar space-y-1">
-                  <div
-                    v-for="app in form.values.sensitive_apps"
-                    :key="app"
-                    class="flex items-center justify-between bg-muted/50 px-3 py-1.5 rounded text-sm"
-                  >
-                    <span class="truncate">{{ app }}</span>
-                    <button
-                      @click="removeSensitiveApp(app)"
-                      type="button"
-                      class="text-muted-foreground hover:text-destructive transition-colors ml-2"
-                    >
-                      <X class="w-3 h-3" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
 
             <!-- Clear Pinned on Clear -->
             <FormField v-slot="componentField" name="clear_pinned_on_clear">

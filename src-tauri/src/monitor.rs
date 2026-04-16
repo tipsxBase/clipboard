@@ -31,15 +31,6 @@ impl ClipboardMonitor {
             last_files: Vec::new(),
         }
     }
-
-    fn is_password_manager(&self, app_name: &str) -> bool {
-        let state = self.app_handle.state::<AppState>();
-        let config = state.config.lock().unwrap();
-        config
-            .sensitive_apps
-            .iter()
-            .any(|app| app_name.contains(app) || app_name.eq_ignore_ascii_case(app))
-    }
 }
 
 impl ClipboardHandler for ClipboardMonitor {
@@ -57,13 +48,6 @@ impl ClipboardHandler for ClipboardMonitor {
         let mut source_app = None;
         if let Ok(active_window) = get_active_window() {
             log::info!("Active window app: {}", active_window.app_name);
-            if self.is_password_manager(&active_window.app_name) {
-                log::info!(
-                    "Ignored clipboard change from sensitive app: {}",
-                    active_window.app_name
-                );
-                return CallbackResult::Next;
-            }
             source_app = Some(active_window.app_name);
         } else {
             log::warn!("Failed to get active window");

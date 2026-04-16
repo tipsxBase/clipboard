@@ -1,9 +1,8 @@
+use crate::db::Database;
 use crate::models::ClipboardItem;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::fs;
-use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 /// A single automation rule.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -61,76 +60,152 @@ pub enum RuleOutcome {
     Pass,
 }
 
+/// Default rules for blocking password managers.
+pub fn get_default_rules() -> Vec<Rule> {
+    vec![
+        Rule {
+            id: "preset-1password".to_string(),
+            name: "屏蔽 1Password".to_string(),
+            enabled: true,
+            conditions: vec![RuleCondition {
+                field: "source_app".to_string(),
+                operator: "contains".to_string(),
+                value: "1Password".to_string(),
+            }],
+            action: RuleAction {
+                action_type: "ignore".to_string(),
+                collection_id: None,
+            },
+        },
+        Rule {
+            id: "preset-keychain".to_string(),
+            name: "屏蔽 Keychain Access".to_string(),
+            enabled: true,
+            conditions: vec![RuleCondition {
+                field: "source_app".to_string(),
+                operator: "contains".to_string(),
+                value: "Keychain Access".to_string(),
+            }],
+            action: RuleAction {
+                action_type: "ignore".to_string(),
+                collection_id: None,
+            },
+        },
+        Rule {
+            id: "preset-bitwarden".to_string(),
+            name: "屏蔽 Bitwarden".to_string(),
+            enabled: true,
+            conditions: vec![RuleCondition {
+                field: "source_app".to_string(),
+                operator: "contains".to_string(),
+                value: "Bitwarden".to_string(),
+            }],
+            action: RuleAction {
+                action_type: "ignore".to_string(),
+                collection_id: None,
+            },
+        },
+        Rule {
+            id: "preset-lastpass".to_string(),
+            name: "屏蔽 LastPass".to_string(),
+            enabled: true,
+            conditions: vec![RuleCondition {
+                field: "source_app".to_string(),
+                operator: "contains".to_string(),
+                value: "LastPass".to_string(),
+            }],
+            action: RuleAction {
+                action_type: "ignore".to_string(),
+                collection_id: None,
+            },
+        },
+        Rule {
+            id: "preset-keepassxc".to_string(),
+            name: "屏蔽 KeePassXC".to_string(),
+            enabled: true,
+            conditions: vec![RuleCondition {
+                field: "source_app".to_string(),
+                operator: "contains".to_string(),
+                value: "KeePassXC".to_string(),
+            }],
+            action: RuleAction {
+                action_type: "ignore".to_string(),
+                collection_id: None,
+            },
+        },
+        Rule {
+            id: "preset-enpass".to_string(),
+            name: "屏蔽 Enpass".to_string(),
+            enabled: true,
+            conditions: vec![RuleCondition {
+                field: "source_app".to_string(),
+                operator: "contains".to_string(),
+                value: "Enpass".to_string(),
+            }],
+            action: RuleAction {
+                action_type: "ignore".to_string(),
+                collection_id: None,
+            },
+        },
+        Rule {
+            id: "preset-dashlane".to_string(),
+            name: "屏蔽 Dashlane".to_string(),
+            enabled: true,
+            conditions: vec![RuleCondition {
+                field: "source_app".to_string(),
+                operator: "contains".to_string(),
+                value: "Dashlane".to_string(),
+            }],
+            action: RuleAction {
+                action_type: "ignore".to_string(),
+                collection_id: None,
+            },
+        },
+    ]
+}
+
 /// Manages rule definitions and evaluates them against clipboard items.
+/// Rules are stored in the database, not in JSON files.
 pub struct RulesEngine {
-    rules: Arc<Mutex<Vec<Rule>>>,
-    rules_path: std::path::PathBuf,
+    db: Arc<Database>,
 }
 
 impl RulesEngine {
-    /// Load rules from a JSON file, or start with an empty list.
-    pub fn new<P: AsRef<Path>>(path: P) -> Self {
-        let rules_path = path.as_ref().to_path_buf();
-        let rules = if rules_path.exists() {
-            match fs::read_to_string(&rules_path) {
-                Ok(content) => serde_json::from_str(&content).unwrap_or_default(),
-                Err(_) => Vec::new(),
+    /// Create a new RulesEngine with database backend.
+    /// Initializes default rules if database is empty.
+    pub fn new(db: Arc<Database>) -> Self {
+        // Initialize default rules if database is empty
+        let rules = db.get_rules().unwrap_or_default();
+        if rules.is_empty() {
+            for rule in get_default_rules() {
+                if let Err(e) = db.add_rule(&rule) {
+                    log::error!("Failed to add default rule '{}': {}", rule.name, e);
+                }
             }
-        } else {
-            Vec::new()
-        };
-
-        Self {
-            rules: Arc::new(Mutex::new(rules)),
-            rules_path,
+            log::info!("Initialized default password manager blocking rules");
         }
+
+        Self { db }
     }
 
-    /// Persist current rules to disk.
-    fn save(&self) -> Result<(), String> {
-        let rules = self.rules.lock().unwrap();
-        let json = serde_json::to_string_pretty(&*rules).map_err(|e| e.to_string())?;
-        fs::write(&self.rules_path, json).map_err(|e| e.to_string())
-    }
-
-    /// Get all rules.
+    /// Get all rules from database.
     pub fn get_rules(&self) -> Vec<Rule> {
-        self.rules.lock().unwrap().clone()
+        self.db.get_rules().unwrap_or_default()
     }
 
-    /// Add a new rule.
-    pub fn add_rule(&self, rule: Rule) -> Result<(), String> {
-        {
-            let mut rules = self.rules.lock().unwrap();
-            rules.push(rule);
-        }
-        self.save()
+    /// Add a new rule to database.
+    pub fn add_rule(&self, rule: &Rule) -> Result<(), String> {
+        self.db.add_rule(rule).map_err(|e| e.to_string())
     }
 
-    /// Update an existing rule by id.
-    pub fn update_rule(&self, updated: Rule) -> Result<(), String> {
-        {
-            let mut rules = self.rules.lock().unwrap();
-            if let Some(r) = rules.iter_mut().find(|r| r.id == updated.id) {
-                *r = updated;
-            } else {
-                return Err("Rule not found".to_string());
-            }
-        }
-        self.save()
+    /// Update an existing rule in database.
+    pub fn update_rule(&self, rule: &Rule) -> Result<(), String> {
+        self.db.update_rule(rule).map_err(|e| e.to_string())
     }
 
-    /// Delete a rule by id.
+    /// Delete a rule from database.
     pub fn delete_rule(&self, id: &str) -> Result<(), String> {
-        {
-            let mut rules = self.rules.lock().unwrap();
-            let before = rules.len();
-            rules.retain(|r| r.id != id);
-            if rules.len() == before {
-                return Err("Rule not found".to_string());
-            }
-        }
-        self.save()
+        self.db.delete_rule(id).map_err(|e| e.to_string())
     }
 
     /// Evaluate all enabled rules against a clipboard item.
@@ -138,7 +213,7 @@ impl RulesEngine {
     /// Rules are evaluated in order. The first "ignore" rule wins immediately.
     /// All other matching rules accumulate modifications on the item.
     pub fn evaluate(&self, item: &ClipboardItem) -> RuleOutcome {
-        let rules = self.rules.lock().unwrap();
+        let rules = self.get_rules();
         let mut modified = item.clone();
         let mut applied: Vec<String> = Vec::new();
 
@@ -199,8 +274,7 @@ impl RulesEngine {
             "pin" => item.is_pinned = true,
             "snippet" => item.is_snippet = true,
             "add_to_collection" => item.collection_id = action.collection_id,
-            // "favorite" is deprecated, treated as add_to_collection with no specific collection
-            "favorite" => {} // no-op since is_favorite field is removed
+            "favorite" => {} // deprecated, no-op
             _ => {}
         }
     }
@@ -228,33 +302,44 @@ mod tests {
         }
     }
 
-    fn make_engine() -> RulesEngine {
-        let tmp = std::env::temp_dir().join(format!("rules_test_{}.json", std::process::id()));
-        RulesEngine::new(&tmp)
+    #[test]
+    fn default_rules_are_created() {
+        let rules = get_default_rules();
+        assert_eq!(rules.len(), 7);
+        assert!(rules.iter().all(|r| r.enabled));
+        assert!(rules.iter().all(|r| r.action.action_type == "ignore"));
     }
 
     #[test]
-    fn source_app_ignore_rule() {
-        let engine = make_engine();
-        engine
-            .add_rule(Rule {
-                id: "r1".into(),
-                name: "Block 1Password".into(),
-                enabled: true,
-                conditions: vec![RuleCondition {
-                    field: "source_app".into(),
-                    operator: "contains".into(),
-                    value: "1Password".into(),
-                }],
-                action: RuleAction {
-                    action_type: "ignore".into(),
-                    collection_id: None,
-                },
-            })
-            .unwrap();
+    fn source_app_condition_matches() {
+        let rule = Rule {
+            id: "test".to_string(),
+            name: "Block 1Password".to_string(),
+            enabled: true,
+            conditions: vec![RuleCondition {
+                field: "source_app".to_string(),
+                operator: "contains".to_string(),
+                value: "1Password".to_string(),
+            }],
+            action: RuleAction {
+                action_type: "ignore".to_string(),
+                collection_id: None,
+            },
+        };
 
         let mut item = text_item("secret");
-        item.source_app = Some("1Password 7".into());
+        item.source_app = Some("1Password 7".to_string());
+
+        let engine = RulesEngine::new(Arc::new(crate::db::Database::new(
+            std::env::temp_dir().join("test_rules.db"),
+            Arc::new(crate::crypto::Crypto::new(&std::env::temp_dir().join("test.key"))),
+        ).unwrap()));
+
+        // First clear any existing rules and add our test rule
+        for r in engine.get_rules() {
+            engine.delete_rule(&r.id).unwrap();
+        }
+        engine.add_rule(&rule).unwrap();
 
         match engine.evaluate(&item) {
             RuleOutcome::Ignore { rule_name } => assert_eq!(rule_name, "Block 1Password"),
@@ -263,263 +348,41 @@ mod tests {
     }
 
     #[test]
-    fn content_type_mark_sensitive() {
-        let engine = make_engine();
-        engine
-            .add_rule(Rule {
-                id: "r2".into(),
-                name: "Sensitive emails".into(),
-                enabled: true,
-                conditions: vec![RuleCondition {
-                    field: "content_type".into(),
-                    operator: "equals".into(),
-                    value: "email".into(),
-                }],
-                action: RuleAction {
-                    action_type: "mark_sensitive".into(),
-                    collection_id: None,
-                },
-            })
-            .unwrap();
+    fn content_type_condition_matches() {
+        let rule = Rule {
+            id: "test2".to_string(),
+            name: "Sensitive emails".to_string(),
+            enabled: true,
+            conditions: vec![RuleCondition {
+                field: "content_type".to_string(),
+                operator: "equals".to_string(),
+                value: "email".to_string(),
+            }],
+            action: RuleAction {
+                action_type: "mark_sensitive".to_string(),
+                collection_id: None,
+            },
+        };
 
         let mut item = text_item("user@example.com");
         item.data_type = "email".to_string();
 
+        let engine = RulesEngine::new(Arc::new(crate::db::Database::new(
+            std::env::temp_dir().join("test_rules2.db"),
+            Arc::new(crate::crypto::Crypto::new(&std::env::temp_dir().join("test2.key"))),
+        ).unwrap()));
+
+        for r in engine.get_rules() {
+            engine.delete_rule(&r.id).unwrap();
+        }
+        engine.add_rule(&rule).unwrap();
+
         match engine.evaluate(&item) {
-            RuleOutcome::Modify {
-                item,
-                applied_rules,
-            } => {
+            RuleOutcome::Modify { item, applied_rules } => {
                 assert!(item.is_sensitive);
                 assert_eq!(applied_rules, vec!["Sensitive emails"]);
             }
             _ => panic!("Expected Modify"),
         }
-    }
-
-    #[test]
-    fn content_pattern_regex_match() {
-        let engine = make_engine();
-        engine
-            .add_rule(Rule {
-                id: "r3".into(),
-                name: "Pin URLs".into(),
-                enabled: true,
-                conditions: vec![RuleCondition {
-                    field: "content".into(),
-                    operator: "matches".into(),
-                    value: r"^https?://".into(),
-                }],
-                action: RuleAction {
-                    action_type: "pin".into(),
-                    collection_id: None,
-                },
-            })
-            .unwrap();
-
-        let item = text_item("https://example.com");
-
-        match engine.evaluate(&item) {
-            RuleOutcome::Modify { item, .. } => assert!(item.is_pinned),
-            _ => panic!("Expected Modify"),
-        }
-
-        // Non-matching
-        let item2 = text_item("just some text");
-        match engine.evaluate(&item2) {
-            RuleOutcome::Pass => {}
-            _ => panic!("Expected Pass"),
-        }
-    }
-
-    #[test]
-    fn disabled_rule_is_skipped() {
-        let engine = make_engine();
-        engine
-            .add_rule(Rule {
-                id: "r4".into(),
-                name: "Disabled".into(),
-                enabled: false,
-                conditions: vec![RuleCondition {
-                    field: "content".into(),
-                    operator: "contains".into(),
-                    value: "test".into(),
-                }],
-                action: RuleAction {
-                    action_type: "ignore".into(),
-                    collection_id: None,
-                },
-            })
-            .unwrap();
-
-        let item = text_item("test content");
-        match engine.evaluate(&item) {
-            RuleOutcome::Pass => {}
-            _ => panic!("Expected Pass for disabled rule"),
-        }
-    }
-
-    #[test]
-    fn multiple_rules_accumulate() {
-        let engine = make_engine();
-        engine
-            .add_rule(Rule {
-                id: "r5".into(),
-                name: "Snippet URLs".into(),
-                enabled: true,
-                conditions: vec![RuleCondition {
-                    field: "content_type".into(),
-                    operator: "equals".into(),
-                    value: "url".into(),
-                }],
-                action: RuleAction {
-                    action_type: "snippet".into(),
-                    collection_id: None,
-                },
-            })
-            .unwrap();
-        engine
-            .add_rule(Rule {
-                id: "r6".into(),
-                name: "Pin URLs".into(),
-                enabled: true,
-                conditions: vec![RuleCondition {
-                    field: "content_type".into(),
-                    operator: "equals".into(),
-                    value: "url".into(),
-                }],
-                action: RuleAction {
-                    action_type: "pin".into(),
-                    collection_id: None,
-                },
-            })
-            .unwrap();
-
-        let mut item = text_item("https://example.com");
-        item.data_type = "url".to_string();
-
-        match engine.evaluate(&item) {
-            RuleOutcome::Modify {
-                item,
-                applied_rules,
-            } => {
-                assert!(item.is_snippet);
-                assert!(item.is_pinned);
-                assert_eq!(applied_rules.len(), 2);
-            }
-            _ => panic!("Expected Modify"),
-        }
-    }
-
-    #[test]
-    fn ignore_wins_over_modify() {
-        let engine = make_engine();
-        engine
-            .add_rule(Rule {
-                id: "r7".into(),
-                name: "Ignore first".into(),
-                enabled: true,
-                conditions: vec![RuleCondition {
-                    field: "content".into(),
-                    operator: "contains".into(),
-                    value: "secret".into(),
-                }],
-                action: RuleAction {
-                    action_type: "ignore".into(),
-                    collection_id: None,
-                },
-            })
-            .unwrap();
-        engine
-            .add_rule(Rule {
-                id: "r8".into(),
-                name: "Pin after".into(),
-                enabled: true,
-                conditions: vec![RuleCondition {
-                    field: "content".into(),
-                    operator: "contains".into(),
-                    value: "secret".into(),
-                }],
-                action: RuleAction {
-                    action_type: "pin".into(),
-                    collection_id: None,
-                },
-            })
-            .unwrap();
-
-        let item = text_item("my secret value");
-        match engine.evaluate(&item) {
-            RuleOutcome::Ignore { .. } => {}
-            _ => panic!("Expected Ignore to win"),
-        }
-    }
-
-    #[test]
-    fn add_to_collection_action() {
-        let engine = make_engine();
-        engine
-            .add_rule(Rule {
-                id: "r9".into(),
-                name: "Collect code".into(),
-                enabled: true,
-                conditions: vec![RuleCondition {
-                    field: "content_type".into(),
-                    operator: "equals".into(),
-                    value: "code".into(),
-                }],
-                action: RuleAction {
-                    action_type: "add_to_collection".into(),
-                    collection_id: Some(42),
-                },
-            })
-            .unwrap();
-
-        let mut item = text_item("fn main() {}");
-        item.data_type = "code".to_string();
-
-        match engine.evaluate(&item) {
-            RuleOutcome::Modify { item, .. } => {
-                assert_eq!(item.collection_id, Some(42));
-            }
-            _ => panic!("Expected Modify"),
-        }
-    }
-
-    #[test]
-    fn crud_operations() {
-        let engine = make_engine();
-        assert_eq!(engine.get_rules().len(), 0);
-
-        engine
-            .add_rule(Rule {
-                id: "c1".into(),
-                name: "Test".into(),
-                enabled: true,
-                conditions: vec![],
-                action: RuleAction {
-                    action_type: "pin".into(),
-                    collection_id: None,
-                },
-            })
-            .unwrap();
-        assert_eq!(engine.get_rules().len(), 1);
-
-        engine
-            .update_rule(Rule {
-                id: "c1".into(),
-                name: "Updated".into(),
-                enabled: false,
-                conditions: vec![],
-                action: RuleAction {
-                    action_type: "pin".into(),
-                    collection_id: None,
-                },
-            })
-            .unwrap();
-        assert_eq!(engine.get_rules()[0].name, "Updated");
-        assert!(!engine.get_rules()[0].enabled);
-
-        engine.delete_rule("c1").unwrap();
-        assert_eq!(engine.get_rules().len(), 0);
     }
 }

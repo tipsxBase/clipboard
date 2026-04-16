@@ -1,4 +1,7 @@
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+
+use crate::db::Database;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClipboardItem {
@@ -54,8 +57,6 @@ pub struct AppConfig {
     pub language: String,
     #[serde(default = "default_theme")]
     pub theme: String,
-    #[serde(default = "default_sensitive_apps")]
-    pub sensitive_apps: Vec<String>,
     #[serde(default)]
     pub compact_mode: bool,
     // 清空历史时是否清空置顶内容
@@ -102,18 +103,6 @@ fn default_theme() -> String {
     "auto".to_string()
 }
 
-fn default_sensitive_apps() -> Vec<String> {
-    vec![
-        "1Password".to_string(),
-        "Keychain Access".to_string(),
-        "Bitwarden".to_string(),
-        "LastPass".to_string(),
-        "KeePassXC".to_string(),
-        "Enpass".to_string(),
-        "Dashlane".to_string(),
-    ]
-}
-
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
@@ -121,7 +110,6 @@ impl Default for AppConfig {
             max_history_size: 20,
             language: "auto".to_string(),
             theme: "auto".to_string(),
-            sensitive_apps: default_sensitive_apps(),
             compact_mode: false,
             clear_pinned_on_clear: false,
             clear_collected_on_clear: false,
@@ -130,6 +118,93 @@ impl Default for AppConfig {
             screenshot_quality: 90,
             screenshot_save_action: "clipboard".to_string(),
         }
+    }
+}
+
+impl AppConfig {
+    /// Load config from database, falling back to defaults if not found.
+    pub fn from_db(db: &Arc<Database>) -> Self {
+        let config_values = db.get_all_config().unwrap_or_default();
+
+        Self {
+            shortcut: config_values
+                .get("shortcut")
+                .cloned()
+                .unwrap_or_else(|| "CommandOrControl+Shift+V".to_string()),
+            max_history_size: config_values
+                .get("max_history_size")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(20),
+            language: config_values
+                .get("language")
+                .cloned()
+                .unwrap_or_else(|| "auto".to_string()),
+            theme: config_values
+                .get("theme")
+                .cloned()
+                .unwrap_or_else(|| "auto".to_string()),
+            compact_mode: config_values
+                .get("compact_mode")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(false),
+            clear_pinned_on_clear: config_values
+                .get("clear_pinned_on_clear")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(false),
+            clear_collected_on_clear: config_values
+                .get("clear_collected_on_clear")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(false),
+            screenshot_shortcut: config_values
+                .get("screenshot_shortcut")
+                .cloned()
+                .unwrap_or_else(|| "CommandOrControl+Shift+S".to_string()),
+            screenshot_format: config_values
+                .get("screenshot_format")
+                .cloned()
+                .unwrap_or_else(|| "png".to_string()),
+            screenshot_quality: config_values
+                .get("screenshot_quality")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(90),
+            screenshot_save_action: config_values
+                .get("screenshot_save_action")
+                .cloned()
+                .unwrap_or_else(|| "clipboard".to_string()),
+        }
+    }
+
+    /// Save config to database.
+    pub fn save_to_db(&self, db: &Arc<Database>) -> Result<(), String> {
+        let config_values = serde_json::json!({
+            "shortcut": self.shortcut,
+            "max_history_size": self.max_history_size.to_string(),
+            "language": self.language,
+            "theme": self.theme,
+            "compact_mode": self.compact_mode.to_string(),
+            "clear_pinned_on_clear": self.clear_pinned_on_clear.to_string(),
+            "clear_collected_on_clear": self.clear_collected_on_clear.to_string(),
+            "screenshot_shortcut": self.screenshot_shortcut,
+            "screenshot_format": self.screenshot_format,
+            "screenshot_quality": self.screenshot_quality.to_string(),
+            "screenshot_save_action": self.screenshot_save_action,
+        });
+
+        if let serde_json::Value::Object(map) = config_values {
+            for (key, value) in map {
+                let value_str = match value {
+                    serde_json::Value::String(s) => s.clone(),
+                    serde_json::Value::Number(n) => n.to_string(),
+                    serde_json::Value::Bool(b) => b.to_string(),
+                    _ => continue,
+                };
+                if let Err(e) = db.set_config_value(&key, &value_str) {
+                    log::error!("Failed to save config key '{}': {}", key, e);
+                    return Err(e.to_string());
+                }
+            }
+        }
+        Ok(())
     }
 }
 

@@ -3,14 +3,12 @@ use crate::file_manager::FileManager;
 use crate::models::{AppConfig, CaptureResult, ClipboardItem};
 use crate::rules::RulesEngine;
 use crate::storage_paths::StoragePaths;
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tauri::menu::MenuItem;
 use tauri::Wry;
 
 pub struct AppState {
     pub db: Arc<Database>,
-    pub config_path: PathBuf,
     pub config: Arc<Mutex<AppConfig>>,
     pub is_paused: Arc<Mutex<bool>>,
     pub last_app_change: Arc<Mutex<Option<String>>>,

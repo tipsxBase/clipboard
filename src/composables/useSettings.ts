@@ -15,7 +15,6 @@ export function useSettings() {
     max_history_size: 20,
     language: 'auto',
     theme: 'auto',
-    sensitive_apps: [],
     compact_mode: false,
     clear_pinned_on_clear: false,
     clear_collected_on_clear: false,
@@ -28,7 +27,6 @@ export function useSettings() {
   const tempMaxSize = ref(20);
   const tempLanguage = ref('auto');
   const tempTheme = ref('auto');
-  const tempSensitiveApps = ref<string[]>([]);
   const tempCompactMode = ref(false);
   const tempClearPinnedOnClear = ref(false);
   const tempClearCollectedOnClear = ref(false);
@@ -68,7 +66,6 @@ export function useSettings() {
       tempMaxSize.value = config.value.max_history_size;
       tempLanguage.value = config.value.language || 'auto';
       tempTheme.value = config.value.theme || 'auto';
-      tempSensitiveApps.value = [...(config.value.sensitive_apps || [])];
       tempCompactMode.value = config.value.compact_mode || false;
       tempClearPinnedOnClear.value = config.value.clear_pinned_on_clear || false;
       tempClearCollectedOnClear.value = config.value.clear_collected_on_clear || false;
@@ -102,7 +99,6 @@ export function useSettings() {
         maxHistorySize: tempMaxSize.value,
         language: tempLanguage.value,
         theme: tempTheme.value,
-        sensitiveApps: tempSensitiveApps.value,
         compactMode: tempCompactMode.value,
         clearPinnedOnClear: tempClearPinnedOnClear.value,
         clearCollectedOnClear: tempClearCollectedOnClear.value,
@@ -127,7 +123,6 @@ export function useSettings() {
     tempMaxSize.value = config.value.max_history_size;
     tempLanguage.value = config.value.language || 'auto';
     tempTheme.value = config.value.theme || 'auto';
-    tempSensitiveApps.value = [...(config.value.sensitive_apps || [])];
     tempCompactMode.value = config.value.compact_mode || false;
     tempClearPinnedOnClear.value = config.value.clear_pinned_on_clear || false;
     tempClearCollectedOnClear.value = config.value.clear_collected_on_clear || false;
@@ -243,7 +238,6 @@ export function useSettings() {
     tempMaxSize,
     tempLanguage,
     tempTheme,
-    tempSensitiveApps,
     tempCompactMode,
     isRecording,
     isRecordingScreenshotShortcut,
