@@ -545,6 +545,7 @@ pub fn run() {
             download_and_install_update,
             set_recording_shortcut,
             set_recording_screenshot_shortcut,
+            restart_app,
         ])
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::CloseRequested { api, .. } => {

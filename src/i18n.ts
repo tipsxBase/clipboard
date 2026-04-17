@@ -262,6 +262,10 @@ const messages = {
       later: 'Later',
       retry: 'Retry',
       close: 'Close',
+      readyToRestart: 'Update installed successfully!',
+      restartNowOrLater: 'Restart now to apply the update, or restart later.',
+      restartNow: 'Restart Now',
+      restartRequired: 'Restart Required',
     },
   },
   zh: {
@@ -522,6 +526,10 @@ const messages = {
       later: '稍后',
       retry: '重试',
       close: '关闭',
+      readyToRestart: '更新安装成功！',
+      restartNowOrLater: '立即重启以应用更新，或稍后重启。',
+      restartNow: '立即重启',
+      restartRequired: '需要重启',
     },
   },
 };

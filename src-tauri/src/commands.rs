@@ -896,6 +896,14 @@ pub async fn download_and_install_update(app: tauri::AppHandle) -> Result<(), St
         })?;
 
     log::info!("Update installed successfully");
+    let _ = app.emit("update-installed", ());
+    Ok(())
+}
+
+#[tauri::command]
+pub fn restart_app(app: tauri::AppHandle) -> Result<(), String> {
+    log::info!("User requested app restart...");
+    app.restart();
     Ok(())
 }
 

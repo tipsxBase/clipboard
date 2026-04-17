@@ -28,6 +28,7 @@ export function useUpdater() {
   const isDownloading = ref(false);
   const isInstalling = ref(false);
   const updateError = ref<string | null>(null);
+  const isReadyToRestart = ref(false);
 
   // Unlisteners
   let unlisteners: UnlistenFn[] = [];
@@ -41,6 +42,7 @@ export function useUpdater() {
       isInstalling.value = false;
       downloadProgress.value = 0;
       updateError.value = null;
+      isReadyToRestart.value = false;
     });
 
     // Listen for update detected (startup/scheduled check)
@@ -66,6 +68,14 @@ export function useUpdater() {
     const unlistenInstalling = await listen('update-installing', () => {
       isInstalling.value = true;
       downloadProgress.value = 100;
+      isDownloading.value = false;
+    });
+
+    // Listen for update installed (ready to restart)
+    const unlistenInstalled = await listen('update-installed', () => {
+      isReadyToRestart.value = true;
+      isInstalling.value = false;
+      showUpdateDialog.value = true;
     });
 
     // Listen for no update available
@@ -88,6 +98,7 @@ export function useUpdater() {
       unlistenDetected,
       unlistenProgress,
       unlistenInstalling,
+      unlistenInstalled,
       unlistenNotAvailable,
       unlistenError,
     ];
@@ -106,11 +117,12 @@ export function useUpdater() {
     isDownloading.value = false;
     isInstalling.value = false;
     updateError.value = null;
+    // 如果已准备好重启，不清除 isReadyToRestart
   };
 
   // 用户点击更新指示器打开对话框
   const openUpdateDialog = () => {
-    if (updateInfo.value) {
+    if (updateInfo.value || isReadyToRestart.value) {
       showUpdateDialog.value = true;
       isDownloading.value = false;
       isInstalling.value = false;
@@ -136,6 +148,15 @@ export function useUpdater() {
     }
   };
 
+  // 用户确认重启应用
+  const restartApp = async () => {
+    try {
+      await invoke('restart_app');
+    } catch (e) {
+      updateError.value = String(e);
+    }
+  };
+
   return {
     showUpdateDialog,
     updateInfo,
@@ -145,8 +166,10 @@ export function useUpdater() {
     isDownloading,
     isInstalling,
     updateError,
+    isReadyToRestart,
     closeDialog,
     downloadAndInstall,
     openUpdateDialog,
+    restartApp,
   };
 }

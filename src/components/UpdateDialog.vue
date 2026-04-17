@@ -17,6 +17,7 @@ import {
   AlertCircle,
   CheckCircle2,
   Loader2,
+  Power,
 } from 'lucide-vue-next';
 import type { UpdateAvailablePayload } from '@/composables/useUpdater';
 
@@ -29,11 +30,13 @@ defineProps<{
   isDownloading: boolean;
   isInstalling: boolean;
   updateError: string | null;
+  isReadyToRestart: boolean;
 }>();
 
 const emit = defineEmits<{
   (e: 'close'): void;
   (e: 'download'): void;
+  (e: 'restart'): void;
 }>();
 
 const { t } = useI18n();
@@ -44,6 +47,10 @@ const handleClose = () => {
 
 const handleDownload = () => {
   emit('download');
+};
+
+const handleRestart = () => {
+  emit('restart');
 };
 </script>
 
@@ -56,9 +63,20 @@ const handleDownload = () => {
           {{ t('updater.title') }}
         </AlertDialogTitle>
         <AlertDialogDescription>
+          <!-- Ready to restart -->
+          <div v-if="isReadyToRestart" class="space-y-3">
+            <p class="flex items-center gap-2 text-green-600">
+              <CheckCircle2 class="w-4 h-4" />
+              {{ t('updater.readyToRestart') }}
+            </p>
+            <p class="text-sm text-muted-foreground">
+              {{ t('updater.restartNowOrLater') }}
+            </p>
+          </div>
+
           <!-- Update Available (waiting for user action) -->
           <div
-            v-if="updateInfo && !isDownloading && !isInstalling && !updateError"
+            v-if="updateInfo && !isDownloading && !isInstalling && !updateError && !isReadyToRestart"
             class="space-y-3"
           >
             <p>
@@ -112,9 +130,20 @@ const handleDownload = () => {
         </AlertDialogDescription>
       </AlertDialogHeader>
       <AlertDialogFooter class="flex gap-2">
+        <!-- Ready to restart - show restart and later buttons -->
+        <template v-if="isReadyToRestart">
+          <Button variant="outline" @click="handleClose">
+            {{ t('updater.later') }}
+          </Button>
+          <AlertDialogAction @click="handleRestart">
+            <Power class="w-4 h-4 mr-2" />
+            {{ t('updater.restartNow') }}
+          </AlertDialogAction>
+        </template>
+
         <!-- Update available - show download and cancel buttons -->
         <template
-          v-if="updateInfo && !isDownloading && !isInstalling && !updateError"
+          v-if="updateInfo && !isDownloading && !isInstalling && !updateError && !isReadyToRestart"
         >
           <Button variant="outline" @click="handleClose">
             {{ t('updater.later') }}

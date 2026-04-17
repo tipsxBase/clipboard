@@ -59,6 +59,7 @@ import {
   Home,
   Palette,
   Keyboard,
+  Power,
 } from 'lucide-vue-next';
 import DOMPurify from 'dompurify';
 import Button from '@/components/ui/button/Button.vue';
@@ -95,6 +96,7 @@ import type { Rule } from '@/types';
 // Props for update notification
 const props = defineProps<{
   updateInfo: { version: string; current_version: string } | null;
+  isReadyToRestart: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -1142,7 +1144,15 @@ onUnmounted(() => {
       <!-- Version with update indicator -->
       <div class="flex items-center gap-1">
         <button
-          v-if="props.updateInfo"
+          v-if="props.isReadyToRestart"
+          @click="emit('open-update-dialog')"
+          class="flex items-center gap-1 px-1.5 rounded-full bg-orange-500/10 text-orange-600 hover:bg-orange-500/20 transition-colors cursor-pointer animate-pulse"
+        >
+          <Power class="w-3 h-3" />
+          <span>{{ t('updater.restartRequired') }}</span>
+        </button>
+        <button
+          v-else-if="props.updateInfo"
           @click="emit('open-update-dialog')"
           class="flex items-center gap-1 px-1.5 rounded-full bg-green-500/10 text-green-600 hover:bg-green-500/20 transition-colors cursor-pointer"
         >

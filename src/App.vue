@@ -20,9 +20,11 @@ const {
   isDownloading,
   isInstalling,
   updateError,
+  isReadyToRestart,
   closeDialog,
   downloadAndInstall,
   openUpdateDialog,
+  restartApp,
 } = useUpdater();
 
 onMounted(() => {
@@ -37,6 +39,7 @@ onMounted(() => {
   <MainWindow
     v-else
     :update-info="updateInfo"
+    :is-ready-to-restart="isReadyToRestart"
     @open-update-dialog="openUpdateDialog"
   />
   <ConfirmProvider />
@@ -51,7 +54,9 @@ onMounted(() => {
     :is-downloading="isDownloading"
     :is-installing="isInstalling"
     :update-error="updateError"
+    :is-ready-to-restart="isReadyToRestart"
     @close="closeDialog"
     @download="downloadAndInstall"
+    @restart="restartApp"
   />
 </template>
