@@ -58,7 +58,6 @@ import {
   Briefcase,
   Home,
   Palette,
-  Keyboard,
   Power,
 } from 'lucide-vue-next';
 import DOMPurify from 'dompurify';
@@ -252,29 +251,21 @@ const showRuleEditor = ref(false);
 const shortcutInputRef = ref<HTMLInputElement | null>(null);
 const screenshotShortcutInputRef = ref<HTMLInputElement | null>(null);
 
-// Handle shortcut record button click - focus input first
-function handleShortcutRecordClick() {
+// Handle shortcut input click - start recording
+function handleShortcutInputClick() {
   if (isRecording.value) {
     stopRecordingShortcut();
   } else {
     startRecordingShortcut();
-    // Focus the input field after starting recording
-    setTimeout(() => {
-      shortcutInputRef.value?.focus();
-    }, 0);
   }
 }
 
-// Handle screenshot shortcut record button click - focus input first
-function handleScreenshotShortcutRecordClick() {
+// Handle screenshot shortcut input click - start recording
+function handleScreenshotShortcutInputClick() {
   if (isRecordingScreenshotShortcut.value) {
     stopRecordingScreenshotShortcut();
   } else {
     startRecordingScreenshotShortcut();
-    // Focus the input field after starting recording
-    setTimeout(() => {
-      screenshotShortcutInputRef.value?.focus();
-    }, 0);
   }
 }
 
@@ -1431,28 +1422,16 @@ onUnmounted(() => {
                   {{ t('settings.globalShortcut') }}
                 </FormLabel>
                 <FormControl>
-                  <div class="flex items-center gap-2">
-                    <Input
-                      ref="shortcutInputRef"
-                      readonly
-                      :placeholder="tempShortcut"
-                      class="flex-1"
-                      :model-value="isRecording ? t('settings.recording') : componentField.modelValue"
-                      @blur="componentField.onBlur"
-                    />
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="outline"
-                      class="h-8 w-8"
-                      :class="{ 'bg-primary text-primary-foreground': isRecording }"
-                      @click.stop="handleShortcutRecordClick()"
-                      @keydown.stop.prevent
-                      :title="isRecording ? t('settings.stopRecording') : t('settings.startRecording')"
-                    >
-                      <Keyboard class="w-4 h-4" />
-                    </Button>
-                  </div>
+                  <Input
+                    ref="shortcutInputRef"
+                    readonly
+                    :placeholder="tempShortcut"
+                    class="flex-1 cursor-pointer"
+                    :class="{ 'bg-primary/10 ring-2 ring-primary': isRecording }"
+                    :model-value="isRecording ? t('settings.recording') : tempShortcut"
+                    @click="handleShortcutInputClick"
+                    @blur="componentField.onBlur"
+                  />
                 </FormControl>
               </FormItem>
             </FormField>
@@ -1464,28 +1443,16 @@ onUnmounted(() => {
                   {{ t('settings.screenshotShortcut') }}
                 </FormLabel>
                 <FormControl>
-                  <div class="flex items-center gap-2">
-                    <Input
-                      ref="screenshotShortcutInputRef"
-                      readonly
-                      :placeholder="tempScreenshotShortcut"
-                      class="flex-1"
-                      :model-value="isRecordingScreenshotShortcut ? t('settings.recording') : componentField.modelValue"
-                      @blur="componentField.onBlur"
-                    />
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="outline"
-                      class="h-8 w-8"
-                      :class="{ 'bg-primary text-primary-foreground': isRecordingScreenshotShortcut }"
-                      @click.stop="handleScreenshotShortcutRecordClick()"
-                      @keydown.stop.prevent
-                      :title="isRecordingScreenshotShortcut ? t('settings.stopRecording') : t('settings.startRecording')"
-                    >
-                      <Keyboard class="w-4 h-4" />
-                    </Button>
-                  </div>
+                  <Input
+                    ref="screenshotShortcutInputRef"
+                    readonly
+                    :placeholder="tempScreenshotShortcut"
+                    class="flex-1 cursor-pointer"
+                    :class="{ 'bg-primary/10 ring-2 ring-primary': isRecordingScreenshotShortcut }"
+                    :model-value="isRecordingScreenshotShortcut ? t('settings.recording') : tempScreenshotShortcut"
+                    @click="handleScreenshotShortcutInputClick"
+                    @blur="componentField.onBlur"
+                  />
                 </FormControl>
               </FormItem>
             </FormField>
