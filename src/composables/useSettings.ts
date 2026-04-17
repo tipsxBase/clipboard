@@ -163,19 +163,33 @@ export function useSettings() {
     }
   }
 
-  function startRecording(e: MouseEvent) {
+  async function startRecordingShortcut() {
     isRecording.value = true;
     tempShortcut.value = t('settings.recordShortcut');
-    (e.target as HTMLInputElement).focus();
+    // 通知后端开始录制，忽略快捷键触发
+    await invoke('set_recording_shortcut', { isRecording: true });
   }
 
-  function startRecordingScreenshotShortcut(e: MouseEvent) {
+  async function startRecordingScreenshotShortcut() {
     isRecordingScreenshotShortcut.value = true;
     tempScreenshotShortcut.value = t('settings.recordShortcut');
-    (e.target as HTMLInputElement).focus();
+    // 通知后端开始录制，忽略快捷键触发
+    await invoke('set_recording_screenshot_shortcut', { isRecording: true });
   }
 
-  function handleShortcutKeydown(e: KeyboardEvent) {
+  async function stopRecordingShortcut() {
+    isRecording.value = false;
+    // 通知后端停止录制
+    await invoke('set_recording_shortcut', { isRecording: false });
+  }
+
+  async function stopRecordingScreenshotShortcut() {
+    isRecordingScreenshotShortcut.value = false;
+    // 通知后端停止录制
+    await invoke('set_recording_screenshot_shortcut', { isRecording: false });
+  }
+
+  async function handleShortcutKeydown(e: KeyboardEvent) {
     if (!isRecording.value && !isRecordingScreenshotShortcut.value) return;
     e.preventDefault();
     e.stopPropagation();
@@ -204,17 +218,24 @@ export function useSettings() {
       key = keyMap[key];
     }
 
+    // 如果只是修饰键，不结束录制
     if (['META', 'CONTROL', 'ALT', 'SHIFT'].includes(key)) {
+      // 更新显示当前按下的修饰键
+      if (isRecording.value) {
+        tempShortcut.value = modifiers.join('+') + ' + ...';
+      } else if (isRecordingScreenshotShortcut.value) {
+        tempScreenshotShortcut.value = modifiers.join('+') + ' + ...';
+      }
       return;
     }
 
     const shortcut = [...modifiers, key].join('+');
     if (isRecording.value) {
       tempShortcut.value = shortcut;
-      isRecording.value = false;
+      await stopRecordingShortcut();
     } else if (isRecordingScreenshotShortcut.value) {
       tempScreenshotShortcut.value = shortcut;
-      isRecordingScreenshotShortcut.value = false;
+      await stopRecordingScreenshotShortcut();
     }
   }
 
@@ -253,8 +274,10 @@ export function useSettings() {
     openSettings,
     toggleAutoStart,
     togglePause,
-    startRecording,
+    startRecordingShortcut,
     startRecordingScreenshotShortcut,
+    stopRecordingShortcut,
+    stopRecordingScreenshotShortcut,
     handleShortcutKeydown,
     setupConfigListeners,
   };

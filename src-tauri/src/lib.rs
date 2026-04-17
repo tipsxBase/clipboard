@@ -55,6 +55,10 @@ pub fn run() {
 
     let is_paused = Arc::new(Mutex::new(false));
     let is_paused_state = is_paused.clone();
+    let is_recording_shortcut = Arc::new(Mutex::new(false));
+    let is_recording_shortcut_state = is_recording_shortcut.clone();
+    let is_recording_screenshot_shortcut = Arc::new(Mutex::new(false));
+    let is_recording_screenshot_shortcut_state = is_recording_screenshot_shortcut.clone();
     let last_app_change = Arc::new(Mutex::new(None));
     let last_app_change_state = last_app_change.clone();
     let last_app_image_change = Arc::new(Mutex::new(None));
@@ -210,6 +214,8 @@ pub fn run() {
                 db: db.clone(),
                 config: config_arc.clone(),
                 is_paused: is_paused_state.clone(),
+                is_recording_shortcut: is_recording_shortcut_state.clone(),
+                is_recording_screenshot_shortcut: is_recording_screenshot_shortcut_state.clone(),
                 last_app_change: last_app_change_state.clone(),
                 last_app_image_change: last_app_image_change_state.clone(),
                 last_app_file_change: last_app_file_change_state.clone(),
@@ -231,6 +237,14 @@ pub fn run() {
                     screenshot_shortcut_key.as_str(),
                     move |_app, _shortcut, event| {
                         if event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed {
+                            // Check if recording screenshot shortcut - ignore trigger
+                            let state = _app.state::<AppState>();
+                            if let Ok(is_recording) = state.is_recording_screenshot_shortcut.lock() {
+                                if *is_recording {
+                                    log::info!("Screenshot shortcut ignored during recording");
+                                    return;
+                                }
+                            }
                             let handle = screenshot_handle.clone();
                             tauri::async_runtime::spawn(async move {
                                 if let Err(e) =
@@ -255,8 +269,15 @@ pub fn run() {
                     shortcut_key.as_str(),
                     move |app, _shortcut, event| {
                         if event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed {
-                            // Check Paste Stack
+                            // Check if recording shortcut - ignore trigger
                             let state = app.state::<AppState>();
+                            if let Ok(is_recording) = state.is_recording_shortcut.lock() {
+                                if *is_recording {
+                                    log::info!("Main shortcut ignored during recording");
+                                    return;
+                                }
+                            }
+                            // Check Paste Stack
                             if let Ok(mut stack) = state.paste_stack.lock() {
                                 if !stack.is_empty() {
                                     let item = stack.remove(0);
@@ -522,6 +543,8 @@ pub fn run() {
             update_rule,
             delete_rule,
             download_and_install_update,
+            set_recording_shortcut,
+            set_recording_screenshot_shortcut,
         ])
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::CloseRequested { api, .. } => {

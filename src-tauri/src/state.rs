@@ -18,6 +18,8 @@ pub struct AppState {
     pub db: Arc<Database>,
     pub config: Arc<Mutex<AppConfig>>,
     pub is_paused: Arc<Mutex<bool>>,
+    pub is_recording_shortcut: Arc<Mutex<bool>>,
+    pub is_recording_screenshot_shortcut: Arc<Mutex<bool>>,
     pub last_app_change: Arc<Mutex<Option<String>>>,
     pub last_app_image_change: Arc<Mutex<Option<Vec<u8>>>>,
     pub last_app_file_change: Arc<Mutex<Option<Vec<String>>>>,

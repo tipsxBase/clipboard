@@ -898,3 +898,21 @@ pub async fn download_and_install_update(app: tauri::AppHandle) -> Result<(), St
     log::info!("Update installed successfully");
     Ok(())
 }
+
+#[tauri::command]
+pub fn set_recording_shortcut(state: tauri::State<AppState>, is_recording: bool) -> Result<(), String> {
+    if let Ok(mut recording) = state.is_recording_shortcut.lock() {
+        *recording = is_recording;
+        log::info!("Recording shortcut mode: {}", is_recording);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_recording_screenshot_shortcut(state: tauri::State<AppState>, is_recording: bool) -> Result<(), String> {
+    if let Ok(mut recording) = state.is_recording_screenshot_shortcut.lock() {
+        *recording = is_recording;
+        log::info!("Recording screenshot shortcut mode: {}", is_recording);
+    }
+    Ok(())
+}

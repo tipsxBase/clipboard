@@ -58,6 +58,7 @@ import {
   Briefcase,
   Home,
   Palette,
+  Keyboard,
 } from 'lucide-vue-next';
 import DOMPurify from 'dompurify';
 import Button from '@/components/ui/button/Button.vue';
@@ -232,8 +233,10 @@ const {
   openSettings,
   toggleAutoStart,
   togglePause,
-  startRecording,
+  startRecordingShortcut,
   startRecordingScreenshotShortcut,
+  stopRecordingShortcut,
+  stopRecordingScreenshotShortcut,
   handleShortcutKeydown,
   setupConfigListeners,
 } = useSettings();
@@ -1389,25 +1392,26 @@ onUnmounted(() => {
                   {{ t('settings.globalShortcut') }}
                 </FormLabel>
                 <FormControl>
-                  <div class="relative">
+                  <div class="flex items-center gap-2">
                     <Input
                       readonly
-                      :placeholder="t('settings.recordShortcut')"
-                      class="cursor-pointer"
-                      :model-value="componentField.modelValue"
-                      @click="startRecording"
+                      :placeholder="tempShortcut"
+                      class="flex-1"
+                      :model-value="isRecording ? t('settings.recording') : componentField.modelValue"
                       @keydown="handleShortcutKeydown"
                       @blur="componentField.onBlur"
                     />
-                    <span
-                      v-if="isRecording"
-                      class="absolute right-3 top-1/2 transform -translate-y-1/2 flex h-2 w-2"
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="outline"
+                      class="h-8 w-8"
+                      :class="{ 'bg-primary text-primary-foreground': isRecording }"
+                      @click="isRecording ? stopRecordingShortcut() : startRecordingShortcut()"
+                      :title="isRecording ? t('settings.stopRecording') : t('settings.startRecording')"
                     >
-                      <span
-                        class="animate-ping absolute inline-flex h-full w-full rounded-full bg-destructive opacity-75"
-                      ></span>
-                      <span class="relative inline-flex rounded-full h-2 w-2 bg-destructive"></span>
-                    </span>
+                      <Keyboard class="w-4 h-4" />
+                    </Button>
                   </div>
                 </FormControl>
               </FormItem>
@@ -1420,25 +1424,26 @@ onUnmounted(() => {
                   {{ t('settings.screenshotShortcut') }}
                 </FormLabel>
                 <FormControl>
-                  <div class="relative">
+                  <div class="flex items-center gap-2">
                     <Input
                       readonly
-                      :placeholder="t('settings.recordShortcut')"
-                      class="cursor-pointer"
-                      :model-value="componentField.modelValue"
-                      @click="startRecordingScreenshotShortcut"
+                      :placeholder="tempScreenshotShortcut"
+                      class="flex-1"
+                      :model-value="isRecordingScreenshotShortcut ? t('settings.recording') : componentField.modelValue"
                       @keydown="handleShortcutKeydown"
                       @blur="componentField.onBlur"
                     />
-                    <span
-                      v-if="isRecordingScreenshotShortcut"
-                      class="absolute right-3 top-1/2 transform -translate-y-1/2 flex h-2 w-2"
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="outline"
+                      class="h-8 w-8"
+                      :class="{ 'bg-primary text-primary-foreground': isRecordingScreenshotShortcut }"
+                      @click="isRecordingScreenshotShortcut ? stopRecordingScreenshotShortcut() : startRecordingScreenshotShortcut()"
+                      :title="isRecordingScreenshotShortcut ? t('settings.stopRecording') : t('settings.startRecording')"
                     >
-                      <span
-                        class="animate-ping absolute inline-flex h-full w-full rounded-full bg-destructive opacity-75"
-                      ></span>
-                      <span class="relative inline-flex rounded-full h-2 w-2 bg-destructive"></span>
-                    </span>
+                      <Keyboard class="w-4 h-4" />
+                    </Button>
                   </div>
                 </FormControl>
               </FormItem>
