@@ -22,6 +22,7 @@ export function useUpdater() {
   // State
   const showUpdateDialog = ref(false);
   const updateInfo = ref<UpdateAvailablePayload | null>(null);
+  const currentVersion = ref<string>('');
   const downloadProgress = ref(0);
   const downloadedBytes = ref(0);
   const totalBytes = ref(0);
@@ -34,6 +35,13 @@ export function useUpdater() {
   let unlisteners: UnlistenFn[] = [];
 
   onMounted(async () => {
+    // Get current app version
+    try {
+      currentVersion.value = await invoke<string>('get_app_version');
+    } catch (e) {
+      console.error('Failed to get app version:', e);
+    }
+
     // Listen for update available (user clicked check update)
     const unlistenAvailable = await listen<UpdateAvailablePayload>('update-available', (event) => {
       updateInfo.value = event.payload;
@@ -160,6 +168,7 @@ export function useUpdater() {
   return {
     showUpdateDialog,
     updateInfo,
+    currentVersion,
     downloadProgress,
     downloadedBytes,
     totalBytes,

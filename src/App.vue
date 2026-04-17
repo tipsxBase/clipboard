@@ -14,6 +14,7 @@ const currentWindowLabel = ref('main');
 const {
   showUpdateDialog,
   updateInfo,
+  currentVersion,
   downloadProgress,
   downloadedBytes,
   totalBytes,
@@ -39,6 +40,7 @@ onMounted(() => {
   <MainWindow
     v-else
     :update-info="updateInfo"
+    :current-version="currentVersion"
     :is-ready-to-restart="isReadyToRestart"
     @open-update-dialog="openUpdateDialog"
   />

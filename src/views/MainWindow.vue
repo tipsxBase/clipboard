@@ -95,6 +95,7 @@ import type { Rule } from '@/types';
 // Props for update notification
 const props = defineProps<{
   updateInfo: { version: string; current_version: string } | null;
+  currentVersion: string;
   isReadyToRestart: boolean;
 }>();
 
@@ -1259,7 +1260,7 @@ onUnmounted(() => {
           <span>v{{ props.updateInfo.current_version }}</span>
           <ArrowUpDown class="w-3 h-3" />
         </button>
-        <span v-else class="opacity-60">v{{ props.updateInfo?.current_version || '0.4.1' }}</span>
+        <span v-else class="opacity-60">v{{ props.currentVersion }}</span>
       </div>
       <div class="flex items-center gap-1">
         <span>{{ config.shortcut }}</span>
