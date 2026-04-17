@@ -207,45 +207,53 @@ export function useSettings() {
     const shortcut = [...modifiers, key].join('+');
     if (isRecording.value) {
       tempShortcut.value = shortcut;
-      stopRecordingShortcut();
+      // 立即更新状态，不等待异步调用
+      isRecording.value = false;
+      window.removeEventListener('keydown', handleGlobalKeydown, true);
+      // 异步通知后端（不阻塞）
+      invoke('set_recording_shortcut', { isRecording: false }).catch(console.error);
     } else if (isRecordingScreenshotShortcut.value) {
       tempScreenshotShortcut.value = shortcut;
-      stopRecordingScreenshotShortcut();
+      // 立即更新状态，不等待异步调用
+      isRecordingScreenshotShortcut.value = false;
+      window.removeEventListener('keydown', handleGlobalKeydown, true);
+      // 异步通知后端（不阻塞）
+      invoke('set_recording_screenshot_shortcut', { isRecording: false }).catch(console.error);
     }
   };
 
   async function startRecordingShortcut() {
+    // 先添加全局键盘监听，确保能捕获按键
+    window.addEventListener('keydown', handleGlobalKeydown, true);
     isRecording.value = true;
     tempShortcut.value = t('settings.recording');
     // 通知后端开始录制，忽略快捷键触发
     await invoke('set_recording_shortcut', { isRecording: true });
-    // 添加全局键盘监听
-    window.addEventListener('keydown', handleGlobalKeydown, true);
   }
 
   async function startRecordingScreenshotShortcut() {
+    // 先添加全局键盘监听，确保能捕获按键
+    window.addEventListener('keydown', handleGlobalKeydown, true);
     isRecordingScreenshotShortcut.value = true;
     tempScreenshotShortcut.value = t('settings.recording');
     // 通知后端开始录制，忽略快捷键触发
     await invoke('set_recording_screenshot_shortcut', { isRecording: true });
-    // 添加全局键盘监听
-    window.addEventListener('keydown', handleGlobalKeydown, true);
   }
 
-  async function stopRecordingShortcut() {
+  function stopRecordingShortcut() {
     isRecording.value = false;
-    // 通知后端停止录制
-    await invoke('set_recording_shortcut', { isRecording: false });
     // 移除全局键盘监听
     window.removeEventListener('keydown', handleGlobalKeydown, true);
+    // 通知后端停止录制（不阻塞）
+    invoke('set_recording_shortcut', { isRecording: false }).catch(console.error);
   }
 
-  async function stopRecordingScreenshotShortcut() {
+  function stopRecordingScreenshotShortcut() {
     isRecordingScreenshotShortcut.value = false;
-    // 通知后端停止录制
-    await invoke('set_recording_screenshot_shortcut', { isRecording: false });
     // 移除全局键盘监听
     window.removeEventListener('keydown', handleGlobalKeydown, true);
+    // 通知后端停止录制（不阻塞）
+    invoke('set_recording_screenshot_shortcut', { isRecording: false }).catch(console.error);
   }
 
   // Cleanup on unmount

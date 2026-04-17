@@ -248,6 +248,36 @@ const showRules = ref(false);
 const editingRuleData = ref<Rule | null>(null);
 const showRuleEditor = ref(false);
 
+// Refs for shortcut input fields
+const shortcutInputRef = ref<HTMLInputElement | null>(null);
+const screenshotShortcutInputRef = ref<HTMLInputElement | null>(null);
+
+// Handle shortcut record button click - focus input first
+function handleShortcutRecordClick() {
+  if (isRecording.value) {
+    stopRecordingShortcut();
+  } else {
+    startRecordingShortcut();
+    // Focus the input field after starting recording
+    setTimeout(() => {
+      shortcutInputRef.value?.focus();
+    }, 0);
+  }
+}
+
+// Handle screenshot shortcut record button click - focus input first
+function handleScreenshotShortcutRecordClick() {
+  if (isRecordingScreenshotShortcut.value) {
+    stopRecordingScreenshotShortcut();
+  } else {
+    startRecordingScreenshotShortcut();
+    // Focus the input field after starting recording
+    setTimeout(() => {
+      screenshotShortcutInputRef.value?.focus();
+    }, 0);
+  }
+}
+
 // Track which items have their quick action menu open
 const openMenuItems = reactive(new Set<number>());
 
@@ -1403,6 +1433,7 @@ onUnmounted(() => {
                 <FormControl>
                   <div class="flex items-center gap-2">
                     <Input
+                      ref="shortcutInputRef"
                       readonly
                       :placeholder="tempShortcut"
                       class="flex-1"
@@ -1415,7 +1446,8 @@ onUnmounted(() => {
                       variant="outline"
                       class="h-8 w-8"
                       :class="{ 'bg-primary text-primary-foreground': isRecording }"
-                      @click="isRecording ? stopRecordingShortcut() : startRecordingShortcut()"
+                      @click.stop="handleShortcutRecordClick()"
+                      @keydown.stop.prevent
                       :title="isRecording ? t('settings.stopRecording') : t('settings.startRecording')"
                     >
                       <Keyboard class="w-4 h-4" />
@@ -1434,6 +1466,7 @@ onUnmounted(() => {
                 <FormControl>
                   <div class="flex items-center gap-2">
                     <Input
+                      ref="screenshotShortcutInputRef"
                       readonly
                       :placeholder="tempScreenshotShortcut"
                       class="flex-1"
@@ -1446,7 +1479,8 @@ onUnmounted(() => {
                       variant="outline"
                       class="h-8 w-8"
                       :class="{ 'bg-primary text-primary-foreground': isRecordingScreenshotShortcut }"
-                      @click="isRecordingScreenshotShortcut ? stopRecordingScreenshotShortcut() : startRecordingScreenshotShortcut()"
+                      @click.stop="handleScreenshotShortcutRecordClick()"
+                      @keydown.stop.prevent
                       :title="isRecordingScreenshotShortcut ? t('settings.stopRecording') : t('settings.startRecording')"
                     >
                       <Keyboard class="w-4 h-4" />
