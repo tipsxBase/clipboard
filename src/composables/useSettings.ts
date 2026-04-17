@@ -163,69 +163,7 @@ export function useSettings() {
     }
   }
 
-  // Global keyboard event handler for shortcut recording
-  const handleGlobalKeydown = (e: KeyboardEvent) => {
-    if (!isRecording.value && !isRecordingScreenshotShortcut.value) return;
-
-    e.preventDefault();
-    e.stopPropagation();
-    e.stopImmediatePropagation();
-
-    const modifiers = [];
-    if (e.metaKey) modifiers.push('CommandOrControl');
-    if (e.ctrlKey) modifiers.push('Control');
-    if (e.altKey) modifiers.push('Alt');
-    if (e.shiftKey) modifiers.push('Shift');
-
-    let key = e.key.toUpperCase();
-
-    const keyMap: Record<string, string> = {
-      ' ': 'Space',
-      ARROWUP: 'Up',
-      ARROWDOWN: 'Down',
-      ARROWLEFT: 'Left',
-      ARROWRIGHT: 'Right',
-      ENTER: 'Return',
-      ESCAPE: 'Escape',
-      BACKSPACE: 'Backspace',
-      TAB: 'Tab',
-    };
-
-    if (keyMap[key]) {
-      key = keyMap[key];
-    }
-
-    // 如果只是修饰键，不结束录制，只显示当前组合
-    if (['META', 'CONTROL', 'ALT', 'SHIFT'].includes(key)) {
-      if (isRecording.value) {
-        tempShortcut.value = modifiers.join('+') + ' + ...';
-      } else if (isRecordingScreenshotShortcut.value) {
-        tempScreenshotShortcut.value = modifiers.join('+') + ' + ...';
-      }
-      return;
-    }
-
-    const shortcut = [...modifiers, key].join('+');
-    if (isRecording.value) {
-      tempShortcut.value = shortcut;
-      // 立即更新状态，不等待异步调用
-      isRecording.value = false;
-      document.removeEventListener('keydown', handleGlobalKeydown, true);
-      // 异步通知后端（不阻塞）
-      invoke('set_recording_shortcut', { isRecording: false }).catch(console.error);
-    } else if (isRecordingScreenshotShortcut.value) {
-      tempScreenshotShortcut.value = shortcut;
-      // 立即更新状态，不等待异步调用
-      isRecordingScreenshotShortcut.value = false;
-      document.removeEventListener('keydown', handleGlobalKeydown, true);
-      // 异步通知后端（不阻塞）
-      invoke('set_recording_screenshot_shortcut', { isRecording: false }).catch(console.error);
-    }
-  };
-
   async function startRecordingShortcut() {
-    // 先添加全局键盘监听，确保能捕获按键
-    document.addEventListener('keydown', handleGlobalKeydown, true);
     isRecording.value = true;
     tempShortcut.value = t('settings.recording');
     // 通知后端开始录制，忽略快捷键触发
@@ -233,8 +171,6 @@ export function useSettings() {
   }
 
   async function startRecordingScreenshotShortcut() {
-    // 先添加全局键盘监听，确保能捕获按键
-    document.addEventListener('keydown', handleGlobalKeydown, true);
     isRecordingScreenshotShortcut.value = true;
     tempScreenshotShortcut.value = t('settings.recording');
     // 通知后端开始录制，忽略快捷键触发
@@ -243,23 +179,25 @@ export function useSettings() {
 
   function stopRecordingShortcut() {
     isRecording.value = false;
-    // 移除全局键盘监听
-    document.removeEventListener('keydown', handleGlobalKeydown, true);
     // 通知后端停止录制（不阻塞）
     invoke('set_recording_shortcut', { isRecording: false }).catch(console.error);
   }
 
   function stopRecordingScreenshotShortcut() {
     isRecordingScreenshotShortcut.value = false;
-    // 移除全局键盘监听
-    document.removeEventListener('keydown', handleGlobalKeydown, true);
     // 通知后端停止录制（不阻塞）
     invoke('set_recording_screenshot_shortcut', { isRecording: false }).catch(console.error);
   }
 
   // Cleanup on unmount
   onUnmounted(() => {
-    document.removeEventListener('keydown', handleGlobalKeydown, true);
+    // 确保停止录制状态
+    if (isRecording.value) {
+      invoke('set_recording_shortcut', { isRecording: false }).catch(console.error);
+    }
+    if (isRecordingScreenshotShortcut.value) {
+      invoke('set_recording_screenshot_shortcut', { isRecording: false }).catch(console.error);
+    }
   });
 
   async function setupConfigListeners() {

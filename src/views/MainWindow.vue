@@ -234,10 +234,6 @@ const {
   openSettings,
   toggleAutoStart,
   togglePause,
-  startRecordingShortcut,
-  startRecordingScreenshotShortcut,
-  stopRecordingShortcut,
-  stopRecordingScreenshotShortcut,
   setupConfigListeners,
 } = useSettings();
 
@@ -247,25 +243,41 @@ const showRules = ref(false);
 const editingRuleData = ref<Rule | null>(null);
 const showRuleEditor = ref(false);
 
-// Refs for shortcut input fields
-const shortcutInputRef = ref<HTMLInputElement | null>(null);
-const screenshotShortcutInputRef = ref<HTMLInputElement | null>(null);
-
-// Handle shortcut input click - start recording
-function handleShortcutInputClick() {
+// Toggle shortcut recording
+function toggleShortcutRecording() {
   if (isRecording.value) {
-    stopRecordingShortcut();
+    isRecording.value = false;
+    tempShortcut.value = config.value.shortcut;
+    invoke('set_recording_shortcut', { isRecording: false }).catch(console.error);
   } else {
-    startRecordingShortcut();
+    // 先取消另一个录制
+    if (isRecordingScreenshotShortcut.value) {
+      isRecordingScreenshotShortcut.value = false;
+      tempScreenshotShortcut.value = config.value.screenshot_shortcut || 'CommandOrControl+Shift+S';
+      invoke('set_recording_screenshot_shortcut', { isRecording: false }).catch(console.error);
+    }
+    isRecording.value = true;
+    tempShortcut.value = t('settings.recording');
+    invoke('set_recording_shortcut', { isRecording: true }).catch(console.error);
   }
 }
 
-// Handle screenshot shortcut input click - start recording
-function handleScreenshotShortcutInputClick() {
+// Toggle screenshot shortcut recording
+function toggleScreenshotShortcutRecording() {
   if (isRecordingScreenshotShortcut.value) {
-    stopRecordingScreenshotShortcut();
+    isRecordingScreenshotShortcut.value = false;
+    tempScreenshotShortcut.value = config.value.screenshot_shortcut || 'CommandOrControl+Shift+S';
+    invoke('set_recording_screenshot_shortcut', { isRecording: false }).catch(console.error);
   } else {
-    startRecordingScreenshotShortcut();
+    // 先取消另一个录制
+    if (isRecording.value) {
+      isRecording.value = false;
+      tempShortcut.value = config.value.shortcut;
+      invoke('set_recording_shortcut', { isRecording: false }).catch(console.error);
+    }
+    isRecordingScreenshotShortcut.value = true;
+    tempScreenshotShortcut.value = t('settings.recording');
+    invoke('set_recording_screenshot_shortcut', { isRecording: true }).catch(console.error);
   }
 }
 
@@ -556,6 +568,74 @@ function getFilterIcon(filter: string) {
 }
 
 function handleKeydown(e: KeyboardEvent) {
+  // 录制快捷键时，不处理导航事件
+  if (isRecording.value || isRecordingScreenshotShortcut.value) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const modifiers = [];
+    if (e.metaKey) modifiers.push('CommandOrControl');
+    if (e.ctrlKey) modifiers.push('Control');
+    if (e.altKey) modifiers.push('Alt');
+    if (e.shiftKey) modifiers.push('Shift');
+
+    let key = e.key.toUpperCase();
+
+    const keyMap: Record<string, string> = {
+      ' ': 'Space',
+      ARROWUP: 'Up',
+      ARROWDOWN: 'Down',
+      ARROWLEFT: 'Left',
+      ARROWRIGHT: 'Right',
+      ENTER: 'Return',
+      ESCAPE: 'Escape',
+      BACKSPACE: 'Backspace',
+      TAB: 'Tab',
+    };
+
+    if (keyMap[key]) {
+      key = keyMap[key];
+    }
+
+    // ESC 取消录制
+    if (key === 'ESCAPE') {
+      if (isRecording.value) {
+        isRecording.value = false;
+        tempShortcut.value = config.value.shortcut;
+        invoke('set_recording_shortcut', { isRecording: false }).catch(console.error);
+      }
+      if (isRecordingScreenshotShortcut.value) {
+        isRecordingScreenshotShortcut.value = false;
+        tempScreenshotShortcut.value = config.value.screenshot_shortcut || 'CommandOrControl+Shift+S';
+        invoke('set_recording_screenshot_shortcut', { isRecording: false }).catch(console.error);
+      }
+      return;
+    }
+
+    // 如果只是修饰键，不结束录制，只显示当前组合
+    if (['META', 'CONTROL', 'ALT', 'SHIFT'].includes(key)) {
+      if (isRecording.value) {
+        tempShortcut.value = modifiers.join('+') + ' + ...';
+      } else if (isRecordingScreenshotShortcut.value) {
+        tempScreenshotShortcut.value = modifiers.join('+') + ' + ...';
+      }
+      return;
+    }
+
+    // 完成录制
+    const shortcut = [...modifiers, key].join('+');
+    if (isRecording.value) {
+      tempShortcut.value = shortcut;
+      isRecording.value = false;
+      invoke('set_recording_shortcut', { isRecording: false }).catch(console.error);
+    } else if (isRecordingScreenshotShortcut.value) {
+      tempScreenshotShortcut.value = shortcut;
+      isRecordingScreenshotShortcut.value = false;
+      invoke('set_recording_screenshot_shortcut', { isRecording: false }).catch(console.error);
+    }
+    return;
+  }
+
   // Ignore keydown events coming from input elements or when dialogs are open
   const target = e.target as HTMLElement;
   const isInput = ['INPUT', 'TEXTAREA'].includes(target.tagName) || target.isContentEditable;
@@ -1416,43 +1496,59 @@ onUnmounted(() => {
         <form @submit="onSubmit">
           <div class="grid grid-cols-2 gap-x-4 gap-y-4 mt-4">
             <!-- Global Shortcut -->
-            <FormField v-slot="{ componentField }" name="shortcut" class="col-span-2">
+            <FormField name="shortcut" class="col-span-2">
               <FormItem class="col-span-2">
                 <FormLabel class="text-xs font-bold text-muted-foreground uppercase tracking-wider">
                   {{ t('settings.globalShortcut') }}
                 </FormLabel>
                 <FormControl>
-                  <Input
-                    ref="shortcutInputRef"
-                    readonly
-                    :placeholder="tempShortcut"
-                    class="flex-1 cursor-pointer"
-                    :class="{ 'bg-primary/10 ring-2 ring-primary': isRecording }"
-                    :model-value="isRecording ? t('settings.recording') : tempShortcut"
-                    @click="handleShortcutInputClick"
-                    @blur="componentField.onBlur"
-                  />
+                  <div class="relative">
+                    <Input
+                      readonly
+                      :placeholder="t('settings.recordShortcut')"
+                      class="cursor-pointer"
+                      :model-value="tempShortcut"
+                      @click="toggleShortcutRecording"
+                    />
+                    <span
+                      v-if="isRecording"
+                      class="absolute right-3 top-1/2 transform -translate-y-1/2 flex h-2 w-2"
+                    >
+                      <span
+                        class="animate-ping absolute inline-flex h-full w-full rounded-full bg-destructive opacity-75"
+                      ></span>
+                      <span class="relative inline-flex rounded-full h-2 w-2 bg-destructive"></span>
+                    </span>
+                  </div>
                 </FormControl>
               </FormItem>
             </FormField>
 
             <!-- Screenshot Shortcut -->
-            <FormField v-slot="{ componentField }" name="screenshot_shortcut" class="col-span-2">
+            <FormField name="screenshot_shortcut" class="col-span-2">
               <FormItem class="col-span-2">
                 <FormLabel class="text-xs font-bold text-muted-foreground uppercase tracking-wider">
                   {{ t('settings.screenshotShortcut') }}
                 </FormLabel>
                 <FormControl>
-                  <Input
-                    ref="screenshotShortcutInputRef"
-                    readonly
-                    :placeholder="tempScreenshotShortcut"
-                    class="flex-1 cursor-pointer"
-                    :class="{ 'bg-primary/10 ring-2 ring-primary': isRecordingScreenshotShortcut }"
-                    :model-value="isRecordingScreenshotShortcut ? t('settings.recording') : tempScreenshotShortcut"
-                    @click="handleScreenshotShortcutInputClick"
-                    @blur="componentField.onBlur"
-                  />
+                  <div class="relative">
+                    <Input
+                      readonly
+                      :placeholder="t('settings.recordShortcut')"
+                      class="cursor-pointer"
+                      :model-value="tempScreenshotShortcut"
+                      @click="toggleScreenshotShortcutRecording"
+                    />
+                    <span
+                      v-if="isRecordingScreenshotShortcut"
+                      class="absolute right-3 top-1/2 transform -translate-y-1/2 flex h-2 w-2"
+                    >
+                      <span
+                        class="animate-ping absolute inline-flex h-full w-full rounded-full bg-destructive opacity-75"
+                      ></span>
+                      <span class="relative inline-flex rounded-full h-2 w-2 bg-destructive"></span>
+                    </span>
+                  </div>
                 </FormControl>
               </FormItem>
             </FormField>
