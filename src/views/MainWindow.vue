@@ -239,7 +239,6 @@ const {
   startRecordingScreenshotShortcut,
   stopRecordingShortcut,
   stopRecordingScreenshotShortcut,
-  handleShortcutKeydown,
   setupConfigListeners,
 } = useSettings();
 
@@ -1408,7 +1407,6 @@ onUnmounted(() => {
                       :placeholder="tempShortcut"
                       class="flex-1"
                       :model-value="isRecording ? t('settings.recording') : componentField.modelValue"
-                      @keydown="handleShortcutKeydown"
                       @blur="componentField.onBlur"
                     />
                     <Button
@@ -1440,7 +1438,6 @@ onUnmounted(() => {
                       :placeholder="tempScreenshotShortcut"
                       class="flex-1"
                       :model-value="isRecordingScreenshotShortcut ? t('settings.recording') : componentField.modelValue"
-                      @keydown="handleShortcutKeydown"
                       @blur="componentField.onBlur"
                     />
                     <Button

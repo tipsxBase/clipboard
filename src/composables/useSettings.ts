@@ -1,4 +1,4 @@
-import { ref } from 'vue';
+import { ref, onUnmounted } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { enable, disable, isEnabled } from '@tauri-apps/plugin-autostart';
@@ -163,34 +163,10 @@ export function useSettings() {
     }
   }
 
-  async function startRecordingShortcut() {
-    isRecording.value = true;
-    tempShortcut.value = t('settings.recordShortcut');
-    // 通知后端开始录制，忽略快捷键触发
-    await invoke('set_recording_shortcut', { isRecording: true });
-  }
-
-  async function startRecordingScreenshotShortcut() {
-    isRecordingScreenshotShortcut.value = true;
-    tempScreenshotShortcut.value = t('settings.recordShortcut');
-    // 通知后端开始录制，忽略快捷键触发
-    await invoke('set_recording_screenshot_shortcut', { isRecording: true });
-  }
-
-  async function stopRecordingShortcut() {
-    isRecording.value = false;
-    // 通知后端停止录制
-    await invoke('set_recording_shortcut', { isRecording: false });
-  }
-
-  async function stopRecordingScreenshotShortcut() {
-    isRecordingScreenshotShortcut.value = false;
-    // 通知后端停止录制
-    await invoke('set_recording_screenshot_shortcut', { isRecording: false });
-  }
-
-  async function handleShortcutKeydown(e: KeyboardEvent) {
+  // Global keyboard event handler for shortcut recording
+  const handleGlobalKeydown = (e: KeyboardEvent) => {
     if (!isRecording.value && !isRecordingScreenshotShortcut.value) return;
+
     e.preventDefault();
     e.stopPropagation();
 
@@ -218,9 +194,8 @@ export function useSettings() {
       key = keyMap[key];
     }
 
-    // 如果只是修饰键，不结束录制
+    // 如果只是修饰键，不结束录制，只显示当前组合
     if (['META', 'CONTROL', 'ALT', 'SHIFT'].includes(key)) {
-      // 更新显示当前按下的修饰键
       if (isRecording.value) {
         tempShortcut.value = modifiers.join('+') + ' + ...';
       } else if (isRecordingScreenshotShortcut.value) {
@@ -232,12 +207,51 @@ export function useSettings() {
     const shortcut = [...modifiers, key].join('+');
     if (isRecording.value) {
       tempShortcut.value = shortcut;
-      await stopRecordingShortcut();
+      stopRecordingShortcut();
     } else if (isRecordingScreenshotShortcut.value) {
       tempScreenshotShortcut.value = shortcut;
-      await stopRecordingScreenshotShortcut();
+      stopRecordingScreenshotShortcut();
     }
+  };
+
+  async function startRecordingShortcut() {
+    isRecording.value = true;
+    tempShortcut.value = t('settings.recording');
+    // 通知后端开始录制，忽略快捷键触发
+    await invoke('set_recording_shortcut', { isRecording: true });
+    // 添加全局键盘监听
+    window.addEventListener('keydown', handleGlobalKeydown, true);
   }
+
+  async function startRecordingScreenshotShortcut() {
+    isRecordingScreenshotShortcut.value = true;
+    tempScreenshotShortcut.value = t('settings.recording');
+    // 通知后端开始录制，忽略快捷键触发
+    await invoke('set_recording_screenshot_shortcut', { isRecording: true });
+    // 添加全局键盘监听
+    window.addEventListener('keydown', handleGlobalKeydown, true);
+  }
+
+  async function stopRecordingShortcut() {
+    isRecording.value = false;
+    // 通知后端停止录制
+    await invoke('set_recording_shortcut', { isRecording: false });
+    // 移除全局键盘监听
+    window.removeEventListener('keydown', handleGlobalKeydown, true);
+  }
+
+  async function stopRecordingScreenshotShortcut() {
+    isRecordingScreenshotShortcut.value = false;
+    // 通知后端停止录制
+    await invoke('set_recording_screenshot_shortcut', { isRecording: false });
+    // 移除全局键盘监听
+    window.removeEventListener('keydown', handleGlobalKeydown, true);
+  }
+
+  // Cleanup on unmount
+  onUnmounted(() => {
+    window.removeEventListener('keydown', handleGlobalKeydown, true);
+  });
 
   async function setupConfigListeners() {
     await listen('config-updated', () => {
@@ -278,7 +292,6 @@ export function useSettings() {
     startRecordingScreenshotShortcut,
     stopRecordingShortcut,
     stopRecordingScreenshotShortcut,
-    handleShortcutKeydown,
     setupConfigListeners,
   };
 }
