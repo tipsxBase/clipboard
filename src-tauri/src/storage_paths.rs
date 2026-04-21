@@ -15,9 +15,14 @@ pub struct StoragePaths {
 impl StoragePaths {
     /// Create a new `StoragePaths` from the user's HOME directory.
     pub fn new() -> Self {
-        let root = std::env::var("HOME")
-            .map(|h| PathBuf::from(h).join(".clipboard-manager"))
-            .unwrap_or_else(|_| PathBuf::from(".clipboard-manager"));
+        let root = home::home_dir()
+            .map(|h| h.join(".clipboard-manager"))
+            .or_else(|| {
+                std::env::var_os("USERPROFILE")
+                    .map(PathBuf::from)
+                    .map(|h| h.join(".clipboard-manager"))
+            })
+            .unwrap_or_else(|| PathBuf::from(".clipboard-manager"));
 
         let temp_screenshot_dir = std::env::temp_dir().join("clipboard-manager-screenshots");
 

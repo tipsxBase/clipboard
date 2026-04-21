@@ -1,10 +1,14 @@
 use crate::models::ClipboardItem;
 use crate::state::AppState;
 use base64::{engine::general_purpose, Engine as _};
-use clipboard_rs::{Clipboard, ClipboardContent, ClipboardContext, RustImageData};
+#[cfg(target_os = "windows")]
 use clipboard_rs::common::RustImage;
+#[cfg(target_os = "windows")]
+use clipboard_rs::RustImageData;
+use clipboard_rs::{Clipboard, ClipboardContent, ClipboardContext};
 use regex::Regex;
 use std::fs;
+use std::path::Path;
 use tauri::Manager;
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
@@ -72,17 +76,10 @@ pub fn write_to_clipboard(app: &tauri::AppHandle, item: &ClipboardItem) -> Resul
             .write_text(item.content.clone())
             .map_err(|e| e.to_string())?;
     } else if item.kind == "image" {
-        let bytes = if item.content.starts_with('/') || item.content.chars().nth(1) == Some(':') {
-            // It's a file path
-            fs::read(&item.content).map_err(|e| format!("Failed to read file {}: {}", item.content, e))?
-        } else {
-            // It's base64 (legacy support)
-            general_purpose::STANDARD
-                .decode(&item.content)
-                .map_err(|e| e.to_string())?
-        };
+        let bytes = read_image_bytes(&item.content)?;
 
-        let img = image::load_from_memory(&bytes).map_err(|e| format!("Failed to load image: {}", e))?;
+        let img =
+            image::load_from_memory(&bytes).map_err(|e| format!("Failed to load image: {}", e))?;
         let rgba = img.to_rgba8();
         let width = img.width();
         let height = img.height();
@@ -141,4 +138,39 @@ pub fn write_to_clipboard(app: &tauri::AppHandle, item: &ClipboardItem) -> Resul
         }
     }
     Ok(())
+}
+
+fn read_image_bytes(content: &str) -> Result<Vec<u8>, String> {
+    let path = Path::new(content);
+    if path.exists() {
+        return fs::read(path).map_err(|e| format!("Failed to read file {}: {}", content, e));
+    }
+
+    general_purpose::STANDARD
+        .decode(content)
+        .map_err(|e| format!("Failed to decode image data: {}", e))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::read_image_bytes;
+    use std::fs;
+    use std::path::Path;
+
+    #[test]
+    fn read_image_bytes_prefers_existing_relative_file() {
+        let temp_dir = tempfile::tempdir_in(".").unwrap();
+        let file_path = temp_dir.path().join("test-image.bin");
+        fs::write(&file_path, b"not-base64").unwrap();
+
+        let current_dir = std::env::current_dir().unwrap();
+        let relative_path = file_path
+            .strip_prefix(&current_dir)
+            .unwrap_or(Path::new(&file_path))
+            .to_string_lossy()
+            .to_string();
+
+        let bytes = read_image_bytes(&relative_path).unwrap();
+        assert_eq!(bytes, b"not-base64");
+    }
 }
