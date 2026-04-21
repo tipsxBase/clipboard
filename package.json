@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.5.6",
   "homepage": "https://tipsxBase.github.io/clipboard/",
-  "license": "GPL-3.0",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite",
