@@ -21,7 +21,7 @@ use tauri_plugin_global_shortcut::GlobalShortcutExt;
 #[cfg(target_os = "macos")]
 use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
 #[cfg(target_os = "windows")]
-use window_vibrancy::apply_vibrancy;
+use window_vibrancy::apply_mica;
 
 use crate::commands::*;
 use crate::crypto::Crypto;
@@ -116,10 +116,10 @@ pub fn run() {
             {
                 if let Some(window) = app.get_webview_window("main") {
                     // Apply Mica effect for Windows 11
-                    let _ = apply_vibrancy(&window, tauri::window::Effect::Mica, None, None);
+                    let _ = apply_mica(&window, None);
                 }
                 if let Some(window) = app.get_webview_window("popup") {
-                    let _ = apply_vibrancy(&window, tauri::window::Effect::Mica, None, None);
+                    let _ = apply_mica(&window, None);
                 }
             }
 
