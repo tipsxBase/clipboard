@@ -87,7 +87,6 @@ use dunce;
 #[cfg(target_os = "windows")]
 use windows::{
     core::HSTRING,
-    Foundation,
     Graphics::Imaging::{BitmapDecoder, BitmapPixelFormat, SoftwareBitmap},
     Media::Ocr::OcrEngine,
     Storage::{FileAccessMode, StorageFile},

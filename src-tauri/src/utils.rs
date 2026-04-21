@@ -2,6 +2,7 @@ use crate::models::ClipboardItem;
 use crate::state::AppState;
 use base64::{engine::general_purpose, Engine as _};
 use clipboard_rs::{Clipboard, ClipboardContent, ClipboardContext, RustImageData};
+use clipboard_rs::common::RustImage;
 use regex::Regex;
 use std::fs;
 use tauri::Manager;

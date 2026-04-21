@@ -901,10 +901,9 @@ pub async fn download_and_install_update(app: tauri::AppHandle) -> Result<(), St
 }
 
 #[tauri::command]
-pub fn restart_app(app: tauri::AppHandle) -> Result<(), String> {
+pub fn restart_app(app: tauri::AppHandle) {
     log::info!("User requested app restart...");
     app.restart();
-    Ok(())
 }
 
 #[tauri::command]
