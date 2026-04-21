@@ -1,7 +1,7 @@
 use crate::models::ClipboardItem;
 use crate::state::AppState;
 use base64::{engine::general_purpose, Engine as _};
-use clipboard_rs::{Clipboard, ClipboardContent, ClipboardContext};
+use clipboard_rs::{Clipboard, ClipboardContent, ClipboardContext, RustImageData};
 use regex::Regex;
 use std::fs;
 use tauri::Manager;
@@ -73,7 +73,7 @@ pub fn write_to_clipboard(app: &tauri::AppHandle, item: &ClipboardItem) -> Resul
     } else if item.kind == "image" {
         let bytes = if item.content.starts_with('/') || item.content.chars().nth(1) == Some(':') {
             // It's a file path
-            fs::read(&item.content).map_err(|e| e.to_string())?
+            fs::read(&item.content).map_err(|e| format!("Failed to read file {}: {}", item.content, e))?
         } else {
             // It's base64 (legacy support)
             general_purpose::STANDARD
@@ -81,7 +81,7 @@ pub fn write_to_clipboard(app: &tauri::AppHandle, item: &ClipboardItem) -> Resul
                 .map_err(|e| e.to_string())?
         };
 
-        let img = image::load_from_memory(&bytes).map_err(|e| e.to_string())?;
+        let img = image::load_from_memory(&bytes).map_err(|e| format!("Failed to load image: {}", e))?;
         let rgba = img.to_rgba8();
         let width = img.width();
         let height = img.height();
@@ -93,10 +93,36 @@ pub fn write_to_clipboard(app: &tauri::AppHandle, item: &ClipboardItem) -> Resul
             *last_change = Some(rgba_bytes.clone());
         }
 
-        let tauri_img = tauri::image::Image::new(&rgba_bytes, width, height);
-        app.clipboard()
-            .write_image(&tauri_img)
-            .map_err(|e| e.to_string())?;
+        // On Windows, use clipboard-rs directly for better compatibility
+        #[cfg(target_os = "windows")]
+        {
+            if let Ok(ctx) = ClipboardContext::new() {
+                let rust_image = RustImageData::from_dynamic_image(img);
+                let contents = vec![ClipboardContent::Image(rust_image)];
+                if let Err(e) = ctx.set(contents) {
+                    log::error!("Failed to set image via clipboard-rs on Windows: {}", e);
+                    // Fallback to tauri plugin
+                    let tauri_img = tauri::image::Image::new(&rgba_bytes, width, height);
+                    app.clipboard()
+                        .write_image(&tauri_img)
+                        .map_err(|e| e.to_string())?;
+                }
+            } else {
+                let tauri_img = tauri::image::Image::new(&rgba_bytes, width, height);
+                app.clipboard()
+                    .write_image(&tauri_img)
+                    .map_err(|e| e.to_string())?;
+            }
+        }
+
+        // On macOS/Linux, use tauri plugin
+        #[cfg(not(target_os = "windows"))]
+        {
+            let tauri_img = tauri::image::Image::new(&rgba_bytes, width, height);
+            app.clipboard()
+                .write_image(&tauri_img)
+                .map_err(|e| e.to_string())?;
+        }
     } else if item.kind == "file" {
         let files: Vec<String> = serde_json::from_str(&item.content).map_err(|e| e.to_string())?;
 

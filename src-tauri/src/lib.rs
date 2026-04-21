@@ -20,6 +20,8 @@ use tauri::{Emitter, Manager};
 use tauri_plugin_global_shortcut::GlobalShortcutExt;
 #[cfg(target_os = "macos")]
 use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
+#[cfg(target_os = "windows")]
+use window_vibrancy::{apply_vibrancy, Mica};
 
 use crate::commands::*;
 use crate::crypto::Crypto;
@@ -106,6 +108,18 @@ pub fn run() {
                             );
                         }
                     }
+                }
+            }
+
+            // Windows: Set window background color
+            #[cfg(target_os = "windows")]
+            {
+                if let Some(window) = app.get_webview_window("main") {
+                    // Apply Mica effect for Windows 11
+                    let _ = apply_vibrancy(&window, Mica);
+                }
+                if let Some(window) = app.get_webview_window("popup") {
+                    let _ = apply_vibrancy(&window, Mica);
                 }
             }
 
