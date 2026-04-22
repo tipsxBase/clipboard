@@ -4,7 +4,7 @@ import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useI18n } from 'vue-i18n';
 import { useToast } from './useToast';
-import type { ClipboardItem, Collection } from '../types';
+import type { ClipboardItem, Collection, CollectionView } from '../types';
 import { confirm } from '@/composables/useConfirm';
 
 export function useClipboard() {
@@ -21,6 +21,7 @@ export function useClipboard() {
   const activeFilter = ref<
     'all' | 'text' | 'image' | 'sensitive' | 'url' | 'email' | 'code' | 'phone' | 'file' | 'snippet'
   >('all');
+  const currentCollectionView = ref<CollectionView>('history');
   const activeCollectionId = ref<number | null>(null);
   const sourceApp = ref<string | null>(null);
   const timeRange = ref<string | null>(null);
@@ -102,6 +103,7 @@ export function useClipboard() {
   watch(
     [
       searchQuery,
+      currentCollectionView,
       activeCollectionId,
       activeFilter,
       searchRegex,
@@ -122,6 +124,29 @@ export function useClipboard() {
     return history.value;
   });
 
+  const collectionScope = computed<string | null>(() => {
+    if (currentCollectionView.value === 'all_collections') return 'all_collections';
+    if (currentCollectionView.value === 'collection_detail') return 'collection_detail';
+    return null;
+  });
+
+  function setCollectionView(view: CollectionView, collectionId: number | null = null) {
+    currentCollectionView.value = view;
+    activeCollectionId.value = view === 'collection_detail' ? collectionId : null;
+  }
+
+  function openHistoryView() {
+    setCollectionView('history');
+  }
+
+  function openAllCollectionsView() {
+    setCollectionView('all_collections');
+  }
+
+  function openCollectionView(collectionId: number) {
+    setCollectionView('collection_detail', collectionId);
+  }
+
   async function loadHistory(reset = false) {
     if (isLoading.value) return;
     isLoading.value = true;
@@ -138,6 +163,7 @@ export function useClipboard() {
         query: searchQuery.value || null,
         searchRegex: searchRegex.value,
         searchCaseSensitive: searchCaseSensitive.value,
+        collectionScope: collectionScope.value,
         collectionId: activeCollectionId.value,
         activeFilter: activeFilter.value === 'all' ? null : activeFilter.value,
         sourceApp: sourceApp.value,
@@ -159,6 +185,7 @@ export function useClipboard() {
         query: searchQuery.value || null,
         searchRegex: searchRegex.value,
         searchCaseSensitive: searchCaseSensitive.value,
+        collectionScope: collectionScope.value,
         collectionId: activeCollectionId.value,
         activeFilter: activeFilter.value === 'all' ? null : activeFilter.value,
         sourceApp: sourceApp.value,
@@ -230,6 +257,7 @@ export function useClipboard() {
     if (item && item.id) {
       try {
         await invoke('delete_item', { id: item.id });
+        await loadCollections();
         await loadHistory(true);
         showToast(t('toast.deleted'));
       } catch (e) {
@@ -288,6 +316,9 @@ export function useClipboard() {
         if (historyItem) {
           historyItem.is_sensitive = newState as boolean;
         }
+        if (activeFilter.value === 'sensitive' && !newState) {
+          await loadHistory(true);
+        }
         showToast(newState ? t('toast.markedSensitive') : t('toast.unmarkedSensitive'));
       } catch (e) {
         console.error('Failed to toggle sensitive:', e);
@@ -322,6 +353,9 @@ export function useClipboard() {
       const newState = await invoke<boolean>('toggle_snippet', { id });
       const item = history.value.find((i) => i.id === id);
       if (item) item.is_snippet = newState;
+      if (activeFilter.value === 'snippet' && !newState) {
+        await loadHistory(true);
+      }
       showToast(newState ? t('toast.snippetAdded') : t('toast.snippetRemoved'));
     } catch (e) {
       console.error('Failed to toggle snippet:', e);
@@ -331,6 +365,7 @@ export function useClipboard() {
   async function clearHistory() {
     try {
       await invoke('clear_history');
+      await loadCollections();
       await loadHistory(true);
       showToast(t('toast.historyCleared'));
     } catch (e) {
@@ -356,14 +391,24 @@ export function useClipboard() {
 
   // Setup listeners
   async function setupClipboardListeners() {
-    await listen('clipboard-update', () => {
-      loadHistory(true);
+    await listen('clipboard-update', async () => {
+      await loadCollections();
+      await loadHistory(true);
     });
   }
 
   async function loadCollections() {
     try {
-      collections.value = await invoke<Collection[]>('get_collections');
+      const nextCollections = await invoke<Collection[]>('get_collections');
+      collections.value = nextCollections;
+
+      if (
+        currentCollectionView.value === 'collection_detail' &&
+        activeCollectionId.value !== null &&
+        !nextCollections.some((collection) => collection.id === activeCollectionId.value)
+      ) {
+        openAllCollectionsView();
+      }
     } catch (e) {
       console.error('Failed to load collections:', e);
     }
@@ -371,20 +416,22 @@ export function useClipboard() {
 
   async function createCollection(name: string) {
     try {
-      await invoke('create_collection', { name });
+      const collection = await invoke<Collection>('create_collection', { name });
       await loadCollections();
       showToast(t('collections.created'));
+      return collection;
     } catch (e) {
       console.error('Failed to create collection:', e);
       showToast(t('collections.createFailed'));
+      return null;
     }
   }
 
   async function deleteCollection(id: number) {
     try {
       await invoke('delete_collection', { id });
-      if (activeCollectionId.value === id) {
-        activeCollectionId.value = null;
+      if (currentCollectionView.value === 'collection_detail' && activeCollectionId.value === id) {
+        openAllCollectionsView();
       }
       await loadCollections();
       await loadHistory(true); // Refresh items as their collection_id is now null
@@ -409,6 +456,7 @@ export function useClipboard() {
   async function setItemCollection(itemId: number, collectionId: number | null) {
     try {
       await invoke('set_item_collection', { itemId, collectionId });
+      await loadCollections();
       await loadHistory(true);
       showToast(t('collections.itemUpdated'));
     } catch (e) {
@@ -463,7 +511,12 @@ export function useClipboard() {
     searchCaseSensitive,
     selectedIndex,
     activeFilter,
+    currentCollectionView,
     activeCollectionId,
+    setCollectionView,
+    openHistoryView,
+    openAllCollectionsView,
+    openCollectionView,
     previewItem,
     previewContent,
     filteredHistory,

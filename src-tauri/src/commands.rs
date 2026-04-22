@@ -246,6 +246,7 @@ pub fn get_history(
     query: Option<String>,
     search_regex: Option<bool>,
     search_case_sensitive: Option<bool>,
+    collection_scope: Option<String>,
     collection_id: Option<i64>,
     active_filter: Option<String>,
     source_app: Option<String>,
@@ -270,6 +271,7 @@ pub fn get_history(
             query,
             search_regex.unwrap_or(false),
             search_case_sensitive.unwrap_or(false),
+            collection_scope,
             collection_id,
             active_filter,
             source_app,
@@ -353,7 +355,9 @@ pub fn set_clipboard_item(
     // Update Tray
     let history = state
         .db
-        .get_history(1, 20, None, false, false, None, None, None, None, None)
+        .get_history(
+            1, 20, None, false, false, None, None, None, None, None, None,
+        )
         .unwrap_or_default();
     if let Err(e) = update_tray_menu(&app, &history) {
         log::error!("Failed to update tray menu: {}", e);
@@ -394,7 +398,9 @@ pub fn add_to_history(
             // Update Tray
             let history = state
                 .db
-                .get_history(1, 20, None, false, false, None, None, None, None, None)
+                .get_history(
+                    1, 20, None, false, false, None, None, None, None, None, None,
+                )
                 .unwrap_or_default();
             if let Err(e) = update_tray_menu(&app, &history) {
                 log::error!("Failed to update tray menu: {}", e);
@@ -402,7 +408,7 @@ pub fn add_to_history(
             // Return the ID of the inserted item
             let items = state
                 .db
-                .get_history(1, 1, None, false, false, None, None, None, None, None)
+                .get_history(1, 1, None, false, false, None, None, None, None, None, None)
                 .unwrap_or_default();
             Ok(items.first().and_then(|i| i.id).unwrap_or(0))
         }
@@ -444,7 +450,9 @@ pub fn delete_item(
     // Update Tray
     let history = state
         .db
-        .get_history(1, 20, None, false, false, None, None, None, None, None)
+        .get_history(
+            1, 20, None, false, false, None, None, None, None, None, None,
+        )
         .unwrap_or_default();
     if let Err(e) = update_tray_menu(&app, &history) {
         log::error!("Failed to update tray menu after delete: {}", e);
@@ -457,11 +465,7 @@ pub fn delete_item(
 pub fn toggle_sensitive(state: tauri::State<AppState>, id: i64) -> Result<bool, String> {
     match state.db.toggle_sensitive(id) {
         Ok(new_state) => {
-            log::info!(
-                "Toggled sensitive state for item {} to {}",
-                id,
-                new_state
-            );
+            log::info!("Toggled sensitive state for item {} to {}", id, new_state);
             Ok(new_state)
         }
         Err(e) => {
@@ -742,6 +746,7 @@ pub fn get_history_count(
     query: Option<String>,
     search_regex: Option<bool>,
     search_case_sensitive: Option<bool>,
+    collection_scope: Option<String>,
     collection_id: Option<i64>,
     active_filter: Option<String>,
     source_app: Option<String>,
@@ -753,6 +758,7 @@ pub fn get_history_count(
             query,
             search_regex.unwrap_or(false),
             search_case_sensitive.unwrap_or(false),
+            collection_scope,
             collection_id,
             active_filter,
             source_app,
@@ -907,7 +913,10 @@ pub fn restart_app(app: tauri::AppHandle) {
 }
 
 #[tauri::command]
-pub fn set_recording_shortcut(state: tauri::State<AppState>, is_recording: bool) -> Result<(), String> {
+pub fn set_recording_shortcut(
+    state: tauri::State<AppState>,
+    is_recording: bool,
+) -> Result<(), String> {
     if let Ok(mut recording) = state.is_recording_shortcut.lock() {
         *recording = is_recording;
         log::info!("Recording shortcut mode: {}", is_recording);
@@ -916,7 +925,10 @@ pub fn set_recording_shortcut(state: tauri::State<AppState>, is_recording: bool)
 }
 
 #[tauri::command]
-pub fn set_recording_screenshot_shortcut(state: tauri::State<AppState>, is_recording: bool) -> Result<(), String> {
+pub fn set_recording_screenshot_shortcut(
+    state: tauri::State<AppState>,
+    is_recording: bool,
+) -> Result<(), String> {
     if let Ok(mut recording) = state.is_recording_screenshot_shortcut.lock() {
         *recording = is_recording;
         log::info!("Recording screenshot shortcut mode: {}", is_recording);

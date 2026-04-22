@@ -18,10 +18,6 @@ use std::thread;
 use tauri::tray::TrayIconBuilder;
 use tauri::{Emitter, Manager};
 use tauri_plugin_global_shortcut::GlobalShortcutExt;
-#[cfg(target_os = "macos")]
-use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
-#[cfg(target_os = "windows")]
-use window_vibrancy::apply_mica;
 
 use crate::commands::*;
 use crate::crypto::Crypto;
@@ -89,11 +85,7 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             {
                 app.set_activation_policy(tauri::ActivationPolicy::Accessory);
-                if let Some(window) = app.get_webview_window("main") {
-                    let _ = apply_vibrancy(&window, NSVisualEffectMaterial::HudWindow, None, None);
-                }
                 if let Some(window) = app.get_webview_window("popup") {
-                    let _ = apply_vibrancy(&window, NSVisualEffectMaterial::HudWindow, None, None);
                     // Set collection behavior to show on fullscreen spaces
                     use objc2::rc::Retained;
                     use objc2_app_kit::{NSWindow, NSWindowCollectionBehavior};
@@ -108,18 +100,6 @@ pub fn run() {
                             );
                         }
                     }
-                }
-            }
-
-            // Windows: Set window background color
-            #[cfg(target_os = "windows")]
-            {
-                if let Some(window) = app.get_webview_window("main") {
-                    // Apply Mica effect for Windows 11
-                    let _ = apply_mica(&window, None);
-                }
-                if let Some(window) = app.get_webview_window("popup") {
-                    let _ = apply_mica(&window, None);
                 }
             }
 

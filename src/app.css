@@ -1,5 +1,5 @@
-@import "tailwindcss";
-@import "tw-animate-css";
+@import 'tailwindcss';
+@import 'tw-animate-css';
 /*
   ---break---
 */
@@ -183,31 +183,124 @@
   --sidebar-ring: oklch(0.556 0 0);
 }
 
+html,
+body,
+#app {
+  min-height: 100%;
+}
+
 body {
-  @apply bg-background text-foreground;
+  @apply bg-background text-foreground antialiased;
+  background-color: var(--background);
 }
 
-/* Windows fallback: ensure background is visible when transparency doesn't work */
-@media (prefers-color-scheme: light) {
-  body {
-    background-color: oklch(1 0 0) !important; /* white fallback */
-  }
-}
-
-@media (prefers-color-scheme: dark) {
-  body {
-    background-color: oklch(0.145 0 0) !important; /* dark fallback */
-  }
-}
-
-.dark body {
-  background-color: oklch(0.145 0 0) !important;
-}
-
-/* Ensure main window has solid background on Windows */
 #app {
   min-height: 100vh;
-  background-color: var(--background);
+  background:
+    radial-gradient(
+      circle at top,
+      color-mix(in oklch, var(--color-primary) 5%, transparent),
+      transparent 38%
+    ),
+    linear-gradient(
+      180deg,
+      color-mix(in oklch, var(--color-muted) 32%, var(--color-background)) 0%,
+      var(--color-background) 22%
+    );
+}
+
+@layer components {
+  .app-shell {
+    @apply h-screen w-screen overflow-hidden text-foreground;
+  }
+
+  .app-titlebar {
+    @apply flex h-8 select-none items-center gap-1.5 border-b border-border/80 bg-card px-2.5 shadow-sm;
+  }
+
+  .app-titlebar-brand {
+    @apply flex h-full items-center text-[10px] font-semibold tracking-wide text-muted-foreground;
+  }
+
+  .app-titlebar-drag {
+    @apply min-w-4 flex-1 self-stretch;
+  }
+
+  .app-titlebar-action {
+    @apply !h-8 !w-8 rounded-md border border-transparent text-muted-foreground hover:!border-transparent hover:!bg-transparent hover:!text-muted-foreground;
+  }
+
+  .app-titlebar-window-controls {
+    @apply ml-1 flex items-center;
+  }
+
+  .app-window-control {
+    @apply flex h-8 w-9 items-center justify-center text-muted-foreground transition-colors;
+  }
+
+  .app-window-control-close {
+    @apply text-muted-foreground;
+  }
+
+  .app-titlebar-mac-controls {
+    @apply flex items-center gap-1 pr-1;
+  }
+
+  .app-titlebar-dot {
+    @apply h-2 w-2 rounded-full border border-black/10;
+  }
+
+  .app-titlebar-dot-close {
+    background-color: #ff5f57;
+  }
+
+  .app-titlebar-dot-minimize {
+    background-color: #febc2e;
+  }
+
+  .app-titlebar-dot-maximize {
+    background-color: #28c840;
+  }
+
+  .app-surface {
+    @apply border border-border/80 bg-card shadow-sm;
+  }
+
+  .app-header {
+    @apply border-b border-border/80 bg-card px-3 py-3 shadow-sm;
+  }
+
+  .app-toolbar-input {
+    @apply h-10 rounded-xl border-border bg-card text-sm shadow-none;
+  }
+
+  .app-toolbar-button {
+    @apply h-8 w-8 rounded-xl border border-transparent text-muted-foreground hover:border-border hover:bg-muted hover:text-foreground;
+  }
+
+  .app-search-toggle {
+    @apply !h-6 !w-6 rounded-md border border-transparent text-muted-foreground hover:border-border hover:bg-muted hover:text-foreground;
+  }
+
+  .app-toolbar-button-active {
+    @apply border-primary/20 bg-primary/10 text-primary hover:border-primary/30 hover:bg-primary/15 hover:text-primary;
+  }
+
+  .app-chip {
+    @apply h-6 rounded-full border border-transparent px-2 text-[9px] font-bold uppercase tracking-wide text-muted-foreground hover:border-border hover:bg-muted hover:text-foreground;
+  }
+
+  .app-chip-active {
+    @apply border-primary/25 bg-primary text-primary-foreground shadow-sm hover:border-primary/30 hover:bg-primary/90 hover:text-primary-foreground;
+  }
+
+  .app-list-item {
+    @apply rounded-xl border border-transparent bg-transparent transition-colors;
+  }
+
+  .app-list-item-active {
+    @apply border-primary/25 bg-primary/10 text-foreground shadow-sm;
+  }
 }
 
 /*

@@ -1,6 +1,6 @@
 use crate::crypto::Crypto;
 use crate::models::{ClipboardItem, Collection};
-use crate::rules::{Rule, RuleCondition, RuleAction};
+use crate::rules::{Rule, RuleAction, RuleCondition};
 use chrono::Local;
 use regex::Regex;
 use rusqlite::{functions::FunctionFlags, params, Connection, OptionalExtension, Result};
@@ -13,6 +13,75 @@ pub struct Database {
 }
 
 impl Database {
+    fn now_string() -> String {
+        Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
+    }
+
+    fn ensure_collection_schema(conn: &Connection) -> Result<()> {
+        let mut has_sort_order = false;
+        let mut has_updated_at = false;
+
+        {
+            let mut stmt = conn.prepare("PRAGMA table_info(collections)")?;
+            let rows = stmt.query_map([], |row| row.get::<_, String>(1))?;
+
+            for row in rows {
+                match row?.as_str() {
+                    "sort_order" => has_sort_order = true,
+                    "updated_at" => has_updated_at = true,
+                    _ => {}
+                }
+            }
+        }
+
+        if !has_sort_order {
+            conn.execute(
+                "ALTER TABLE collections ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0",
+                [],
+            )?;
+
+            let mut stmt =
+                conn.prepare("SELECT id FROM collections ORDER BY created_at DESC, id DESC")?;
+            let ids = stmt.query_map([], |row| row.get::<_, i64>(0))?;
+
+            for (index, id) in ids.enumerate() {
+                conn.execute(
+                    "UPDATE collections SET sort_order = ? WHERE id = ?",
+                    params![index as i64, id?],
+                )?;
+            }
+        }
+
+        if !has_updated_at {
+            conn.execute(
+                "ALTER TABLE collections ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''",
+                [],
+            )?;
+        }
+
+        conn.execute(
+            "UPDATE collections SET updated_at = created_at WHERE updated_at = '' OR updated_at IS NULL",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_collections_sort_order ON collections (sort_order ASC, updated_at DESC)",
+            [],
+        )?;
+
+        Ok(())
+    }
+
+    fn touch_collection_updated_at(conn: &Connection, collection_id: Option<i64>) -> Result<()> {
+        if let Some(id) = collection_id {
+            conn.execute(
+                "UPDATE collections SET updated_at = ? WHERE id = ?",
+                params![Self::now_string(), id],
+            )?;
+        }
+
+        Ok(())
+    }
+
     /// Create a new database with all tables.
     /// No migration needed - fresh database design.
     pub fn new<P: AsRef<Path>>(path: P, crypto: Arc<Crypto>) -> Result<Self> {
@@ -60,8 +129,10 @@ impl Database {
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
                 created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
                 icon TEXT DEFAULT 'folder',
-                color TEXT DEFAULT ''
+                color TEXT DEFAULT '',
+                sort_order INTEGER NOT NULL DEFAULT 0
             )",
             [],
         )?;
@@ -89,6 +160,7 @@ impl Database {
         )?;
 
         tx.commit()?;
+        Self::ensure_collection_schema(&conn)?;
 
         // Add REGEXP function for search
         conn.create_scalar_function(
@@ -119,6 +191,7 @@ impl Database {
         query: &Option<String>,
         search_regex: bool,
         search_case_sensitive: bool,
+        collection_scope: &Option<String>,
         collection_id: Option<i64>,
         active_filter: &Option<String>,
         source_app: &Option<String>,
@@ -145,9 +218,19 @@ impl Database {
             }
         }
 
-        if let Some(cid) = collection_id {
-            sql.push_str(" AND collection_id = ?");
-            params.push(Box::new(cid));
+        match collection_scope.as_deref() {
+            Some("all_collections") => {
+                sql.push_str(" AND collection_id IS NOT NULL");
+            }
+            Some("collection_detail") => {
+                if let Some(cid) = collection_id {
+                    sql.push_str(" AND collection_id = ?");
+                    params.push(Box::new(cid));
+                } else {
+                    sql.push_str(" AND 1 = 0");
+                }
+            }
+            _ => {}
         }
 
         if let Some(filter) = active_filter {
@@ -211,6 +294,7 @@ impl Database {
         query: Option<String>,
         search_regex: bool,
         search_case_sensitive: bool,
+        collection_scope: Option<String>,
         collection_id: Option<i64>,
         active_filter: Option<String>,
         source_app: Option<String>,
@@ -224,6 +308,7 @@ impl Database {
             &query,
             search_regex,
             search_case_sensitive,
+            &collection_scope,
             collection_id,
             &active_filter,
             &source_app,
@@ -307,7 +392,9 @@ impl Database {
         let conn = self.conn.lock().unwrap();
 
         let content_to_store = if item.is_sensitive && item.kind == "text" {
-            self.crypto.encrypt(&item.content).unwrap_or(item.content.clone())
+            self.crypto
+                .encrypt(&item.content)
+                .unwrap_or(item.content.clone())
         } else {
             item.content.clone()
         };
@@ -348,6 +435,19 @@ impl Database {
                 ],
             )?;
         }
+
+        let effective_collection_id = if updated_count == 0 {
+            item.collection_id
+        } else {
+            conn.query_row(
+                "SELECT collection_id FROM history WHERE content = ? AND kind = ?",
+                params![content_to_store, item.kind],
+                |row| row.get::<_, Option<i64>>(0),
+            )
+            .optional()?
+            .flatten()
+        };
+        Self::touch_collection_updated_at(&conn, effective_collection_id)?;
 
         // Prune if exceeding max_size
         let count: usize = conn.query_row("SELECT COUNT(*) FROM history", [], |row| row.get(0))?;
@@ -487,7 +587,11 @@ impl Database {
         Ok(())
     }
 
-    pub fn clear_history(&self, clear_pinned: bool, clear_collected: bool) -> Result<Vec<ClipboardItem>> {
+    pub fn clear_history(
+        &self,
+        clear_pinned: bool,
+        clear_collected: bool,
+    ) -> Result<Vec<ClipboardItem>> {
         let conn = self.conn.lock().unwrap();
 
         // Build delete condition
@@ -603,6 +707,7 @@ impl Database {
         query: Option<String>,
         search_regex: bool,
         search_case_sensitive: bool,
+        collection_scope: Option<String>,
         collection_id: Option<i64>,
         active_filter: Option<String>,
         source_app: Option<String>,
@@ -613,6 +718,7 @@ impl Database {
             &query,
             search_regex,
             search_case_sensitive,
+            &collection_scope,
             collection_id,
             &active_filter,
             &source_app,
@@ -627,7 +733,7 @@ impl Database {
 
     pub fn update_timestamp(&self, id: i64) -> Result<()> {
         let conn = self.conn.lock().unwrap();
-        let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        let timestamp = Self::now_string();
         conn.execute(
             "UPDATE history SET timestamp = ? WHERE id = ?",
             params![timestamp, id],
@@ -639,33 +745,50 @@ impl Database {
 
     pub fn create_collection(&self, name: String) -> Result<Collection> {
         let conn = self.conn.lock().unwrap();
-        let created_at = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        let created_at = Self::now_string();
+        let sort_order: i64 = conn.query_row(
+            "SELECT COALESCE(MIN(sort_order) - 1, 0) FROM collections",
+            [],
+            |row| row.get(0),
+        )?;
         conn.execute(
-            "INSERT INTO collections (name, created_at) VALUES (?, ?)",
-            params![name, created_at],
+            "INSERT INTO collections (name, created_at, updated_at, sort_order) VALUES (?, ?, ?, ?)",
+            params![name, created_at, created_at, sort_order],
         )?;
         let id = conn.last_insert_rowid();
         Ok(Collection {
             id,
             name,
-            created_at,
+            created_at: created_at.clone(),
+            updated_at: created_at,
             icon: "folder".to_string(),
             color: "".to_string(),
+            sort_order,
+            item_count: 0,
         })
     }
 
     pub fn get_collections(&self) -> Result<Vec<Collection>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, name, created_at, icon, color FROM collections ORDER BY created_at DESC",
+            "SELECT c.id, c.name, c.created_at, c.updated_at, c.icon, c.color, c.sort_order, COUNT(h.id) as item_count
+             FROM collections c
+             LEFT JOIN history h ON h.collection_id = c.id
+             GROUP BY c.id, c.name, c.created_at, c.updated_at, c.icon, c.color, c.sort_order
+             ORDER BY c.sort_order ASC, c.updated_at DESC, c.created_at DESC, c.id DESC",
         )?;
         let rows = stmt.query_map([], |row| {
             Ok(Collection {
                 id: row.get(0)?,
                 name: row.get(1)?,
                 created_at: row.get(2)?,
-                icon: row.get::<_, Option<String>>(3)?.unwrap_or_else(|| "folder".to_string()),
-                color: row.get::<_, Option<String>>(4)?.unwrap_or_default(),
+                updated_at: row.get(3)?,
+                icon: row
+                    .get::<_, Option<String>>(4)?
+                    .unwrap_or_else(|| "folder".to_string()),
+                color: row.get::<_, Option<String>>(5)?.unwrap_or_default(),
+                sort_order: row.get(6)?,
+                item_count: row.get(7)?,
             })
         })?;
         let mut collections = Vec::new();
@@ -684,8 +807,8 @@ impl Database {
     ) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "UPDATE collections SET name = ?, icon = ?, color = ? WHERE id = ?",
-            params![name, icon, color, id],
+            "UPDATE collections SET name = ?, icon = ?, color = ?, updated_at = ? WHERE id = ?",
+            params![name, icon, color, Self::now_string(), id],
         )?;
         Ok(())
     }
@@ -703,10 +826,21 @@ impl Database {
 
     pub fn set_item_collection(&self, item_id: i64, collection_id: Option<i64>) -> Result<()> {
         let conn = self.conn.lock().unwrap();
+        let previous_collection_id = conn
+            .query_row(
+                "SELECT collection_id FROM history WHERE id = ?",
+                params![item_id],
+                |row| row.get::<_, Option<i64>>(0),
+            )
+            .optional()?
+            .flatten();
+
         conn.execute(
             "UPDATE history SET collection_id = ? WHERE id = ?",
             params![collection_id, item_id],
         )?;
+        Self::touch_collection_updated_at(&conn, previous_collection_id)?;
+        Self::touch_collection_updated_at(&conn, collection_id)?;
         Ok(())
     }
 
@@ -719,8 +853,8 @@ impl Database {
         )?;
         let rows = stmt.query_map([], |row| {
             let conditions_json: String = row.get(3)?;
-            let conditions: Vec<RuleCondition> = serde_json::from_str(&conditions_json)
-                .unwrap_or_default();
+            let conditions: Vec<RuleCondition> =
+                serde_json::from_str(&conditions_json).unwrap_or_default();
             Ok(Rule {
                 id: row.get(0)?,
                 name: row.get(1)?,
@@ -787,7 +921,8 @@ impl Database {
             "SELECT value FROM config WHERE key = ?",
             params![key],
             |row| row.get(0),
-        ).optional()
+        )
+        .optional()
     }
 
     pub fn set_config_value(&self, key: &str, value: &str) -> Result<()> {

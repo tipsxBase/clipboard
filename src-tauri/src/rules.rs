@@ -330,10 +330,15 @@ mod tests {
         let mut item = text_item("secret");
         item.source_app = Some("1Password 7".to_string());
 
-        let engine = RulesEngine::new(Arc::new(crate::db::Database::new(
-            std::env::temp_dir().join("test_rules.db"),
-            Arc::new(crate::crypto::Crypto::new(&std::env::temp_dir().join("test.key"))),
-        ).unwrap()));
+        let engine = RulesEngine::new(Arc::new(
+            crate::db::Database::new(
+                std::env::temp_dir().join("test_rules.db"),
+                Arc::new(crate::crypto::Crypto::new(
+                    &std::env::temp_dir().join("test.key"),
+                )),
+            )
+            .unwrap(),
+        ));
 
         // First clear any existing rules and add our test rule
         for r in engine.get_rules() {
@@ -367,10 +372,15 @@ mod tests {
         let mut item = text_item("user@example.com");
         item.data_type = "email".to_string();
 
-        let engine = RulesEngine::new(Arc::new(crate::db::Database::new(
-            std::env::temp_dir().join("test_rules2.db"),
-            Arc::new(crate::crypto::Crypto::new(&std::env::temp_dir().join("test2.key"))),
-        ).unwrap()));
+        let engine = RulesEngine::new(Arc::new(
+            crate::db::Database::new(
+                std::env::temp_dir().join("test_rules2.db"),
+                Arc::new(crate::crypto::Crypto::new(
+                    &std::env::temp_dir().join("test2.key"),
+                )),
+            )
+            .unwrap(),
+        ));
 
         for r in engine.get_rules() {
             engine.delete_rule(&r.id).unwrap();
@@ -378,7 +388,10 @@ mod tests {
         engine.add_rule(&rule).unwrap();
 
         match engine.evaluate(&item) {
-            RuleOutcome::Modify { item, applied_rules } => {
+            RuleOutcome::Modify {
+                item,
+                applied_rules,
+            } => {
                 assert!(item.is_sensitive);
                 assert_eq!(applied_rules, vec!["Sensitive emails"]);
             }

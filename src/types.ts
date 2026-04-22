@@ -19,9 +19,14 @@ export interface Collection {
   id: number;
   name: string;
   created_at: string;
+  updated_at?: string;
   icon?: string;
   color?: string;
+  sort_order?: number;
+  item_count?: number;
 }
+
+export type CollectionView = 'history' | 'all_collections' | 'collection_detail';
 
 export interface RuleCondition {
   field: 'source_app' | 'content_type' | 'content';

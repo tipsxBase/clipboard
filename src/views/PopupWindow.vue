@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useI18n } from 'vue-i18n';
@@ -21,6 +21,7 @@ import {
   Code,
   ScanText,
   Folder,
+  Hash,
   Files,
   FileAudio,
   FileVideo,
@@ -37,10 +38,15 @@ import Button from '@/components/ui/button/Button.vue';
 import Input from '@/components/ui/input/Input.vue';
 import LocalImage from '@/components/LocalImage.vue';
 import QuickActionMenu from '@/components/QuickActionMenu.vue';
+import Select from '@/components/ui/select/Select.vue';
+import SelectContent from '@/components/ui/select/SelectContent.vue';
+import SelectItem from '@/components/ui/select/SelectItem.vue';
+import SelectTrigger from '@/components/ui/select/SelectTrigger.vue';
 import { useClipboard } from '@/composables/useClipboard';
 import { useSettings } from '@/composables/useSettings';
 import { useToast } from '@/composables/useToast';
 import { useTimeAgo } from '@/composables/useTimeAgo';
+import SelectValue from '@/components/ui/select/SelectValue.vue';
 
 const { t } = useI18n();
 const { toastMessage } = useToast();
@@ -48,6 +54,7 @@ const { formatTimeAgo } = useTimeAgo();
 
 const {
   searchQuery,
+  currentCollectionView,
   selectedIndex,
   previewItem,
   previewContent,
@@ -66,6 +73,9 @@ const {
   ocrImage,
   collections,
   activeCollectionId,
+  openHistoryView,
+  openAllCollectionsView,
+  openCollectionView,
   loadCollections,
   timeRange,
   sortMode,
@@ -78,6 +88,61 @@ const { config, loadConfig, setupConfigListeners } = useSettings();
 const isSelectingCollection = ref(false);
 const showHtml = ref(false);
 const linkedScreenshot = ref<ClipboardItem | null>(null);
+const currentCollectionLabel = computed(() => {
+  if (currentCollectionView.value === 'all_collections') return t('collections.allCollections');
+  if (currentCollectionView.value === 'collection_detail' && activeCollectionId.value) {
+    return (
+      collections.value.find((c) => c.id === activeCollectionId.value)?.name ||
+      t('collections.allCollections')
+    );
+  }
+  return t('searchPlaceholder');
+});
+const timeRangeOptions = computed(() => [
+  { value: 'all', label: t('timeRange.all') },
+  { value: 'today', label: t('timeRange.today') },
+  { value: 'week', label: t('timeRange.week') },
+]);
+const currentTimeRangeLabel = computed(
+  () =>
+    timeRangeOptions.value.find((option) => option.value === (timeRange.value ?? 'all'))?.label ??
+    t('timeRange.all')
+);
+const hasActiveHistoryFilters = computed(() => !!searchQuery.value || !!timeRange.value);
+const emptyStateTitle = computed(() => {
+  if (hasActiveHistoryFilters.value) {
+    return t('emptyState.title');
+  }
+
+  if (currentCollectionView.value === 'all_collections') {
+    return t('emptyState.allCollectionsTitle');
+  }
+
+  if (currentCollectionView.value === 'collection_detail') {
+    return t('emptyState.collectionTitle', {
+      name:
+        collections.value.find((collection) => collection.id === activeCollectionId.value)?.name ||
+        currentCollectionLabel.value,
+    });
+  }
+
+  return t('emptyState.title');
+});
+const emptyStateSubtitle = computed(() => {
+  if (hasActiveHistoryFilters.value) {
+    return t('emptyState.subtitle');
+  }
+
+  if (currentCollectionView.value === 'all_collections') {
+    return t('emptyState.allCollectionsSubtitle');
+  }
+
+  if (currentCollectionView.value === 'collection_detail') {
+    return t('emptyState.collectionSubtitle');
+  }
+
+  return t('emptyState.subtitle');
+});
 
 watch(previewItem, async (newItem) => {
   showHtml.value = !!newItem?.html_content;
@@ -96,10 +161,16 @@ watch(previewItem, async (newItem) => {
   }
 });
 
-const getCollectionName = (id?: number) => {
-  if (!id) return undefined;
-  return collections.value.find((c) => c.id === id)?.name;
+const getCollection = (id?: number | null) => {
+  if (!id) return null;
+  return collections.value.find((collection) => collection.id === id) || null;
 };
+
+const getCollectionName = (id?: number) => getCollection(id)?.name;
+
+function shouldShowCollectionBadge(item: ClipboardItem) {
+  return currentCollectionView.value !== 'collection_detail' && !!getCollection(item.collection_id);
+}
 
 function getFilesList(content: string): string[] {
   try {
@@ -155,6 +226,11 @@ function getItemIcon(item: any) {
     default:
       return FileText;
   }
+}
+
+async function handleItemActionDone() {
+  await loadCollections();
+  await loadHistory(true);
 }
 
 function handleItemClick(item: any, e: MouseEvent) {
@@ -237,35 +313,30 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div
-    class="h-screen w-screen bg-background/60 text-foreground flex flex-col overflow-hidden select-none"
-  >
+  <div class="app-shell flex flex-col select-none">
     <!-- Header -->
-    <div class="border-b border-border bg-card/40 backdrop-blur-md p-2 flex gap-2 items-center">
+    <div class="app-header flex gap-2 items-center">
       <!-- Search Bar -->
       <div class="relative flex-1">
         <Search
-          class="absolute left-2 top-1/2 transform -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground"
+          class="pointer-events-none absolute left-3 top-1/2 z-10 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
         />
         <Input
           v-model="searchQuery"
-          class="w-full pl-8 h-7 text-xs"
-          :placeholder="
-            activeCollectionId
-              ? collections.find((c) => c.id === activeCollectionId)?.name
-              : t('searchPlaceholder')
-          "
+          class="w-full"
+          input-class="app-toolbar-input h-9 rounded-xl pl-9 pr-3 text-sm"
+          :placeholder="currentCollectionLabel"
         />
       </div>
       <Button
         size="icon"
         variant="ghost"
-        class="h-7 w-7 shrink-0"
+        class="app-toolbar-button shrink-0"
         :class="{
-          'bg-accent text-accent-foreground': isSelectingCollection || activeCollectionId,
+          'app-toolbar-button-active': isSelectingCollection || currentCollectionView !== 'history',
         }"
         @click="isSelectingCollection = !isSelectingCollection"
-        :title="t('collections.collections')"
+        :title="t('actions.collections')"
       >
         <Folder class="w-4 h-4" />
       </Button>
@@ -273,31 +344,36 @@ onUnmounted(() => {
 
     <!-- Quick Filters -->
     <div
-      class="border-b border-border bg-card/20 px-2 py-1 flex items-center gap-1 overflow-x-auto no-scrollbar"
+      class="border-b border-border/80 bg-muted/30 px-3 py-2 flex items-center gap-1 overflow-x-auto no-scrollbar"
     >
-      <Button
-        v-for="range in [
-          { value: null, label: t('timeRange.all') },
-          { value: 'today', label: t('timeRange.today') },
-          { value: 'week', label: t('timeRange.week') },
-        ]"
-        :key="range.value ?? 'all'"
-        @click="timeRange = range.value"
-        size="sm"
-        :variant="timeRange === range.value ? 'default' : 'ghost'"
-        class="h-5 text-[9px] uppercase font-bold tracking-wider rounded-full px-2 shrink-0"
+      <Select
+        :model-value="timeRange ?? 'all'"
+        @update:model-value="(v) => (timeRange = String(v) === 'all' ? null : String(v))"
       >
-        <Clock class="w-2.5 h-2.5 mr-0.5" v-if="range.value" />
-        {{ range.label }}
-      </Button>
+        <SelectTrigger
+          size="xs"
+          class="min-w-[108px] rounded-lg border-border bg-card px-2.5 text-[10px] shadow-none"
+        >
+          <div class="flex min-w-0 items-center gap-1.5">
+            <Clock class="h-3 w-3 shrink-0 text-muted-foreground" />
+            <span class="truncate font-medium">{{ currentTimeRangeLabel }}</span>
+          </div>
+          <SelectValue class="hidden" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem v-for="range in timeRangeOptions" :key="range.value" :value="range.value">
+            {{ range.label }}
+          </SelectItem>
+        </SelectContent>
+      </Select>
       <div class="flex-1" />
       <Button
         @click="sortMode = sortMode === 'oldest' ? null : 'oldest'"
-        size="sm"
-        :variant="sortMode === 'oldest' ? 'default' : 'ghost'"
-        class="h-5 text-[9px] uppercase font-bold tracking-wider rounded-full px-2 shrink-0"
+        variant="ghost"
+        class="app-chip h-5 px-1.5 shrink-0 text-[8px]"
+        :class="{ 'app-chip-active': sortMode === 'oldest' }"
       >
-        <ArrowUpDown class="w-2.5 h-2.5 mr-0.5" />
+        <ArrowUpDown class="mr-0.5 h-2 w-2" />
         {{ t('sort.oldest') }}
       </Button>
     </div>
@@ -306,27 +382,41 @@ onUnmounted(() => {
     <div class="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1">
       <template v-if="isSelectingCollection">
         <div
-          class="group relative rounded-lg border border-transparent hover:bg-accent/50 hover:border-border transition-all cursor-pointer p-2 flex items-center gap-2"
+          class="group relative app-list-item cursor-pointer p-2 flex items-center gap-2 hover:border-border/80 hover:bg-muted"
           :class="{
-            'bg-accent border-primary/20': activeCollectionId === null,
+            'app-list-item-active': currentCollectionView === 'history',
           }"
           @click="
-            activeCollectionId = null;
+            openHistoryView();
             isSelectingCollection = false;
           "
         >
-          <Folder class="w-4 h-4 text-muted-foreground" />
-          <span class="text-sm font-medium">{{ t('filters.all') }}</span>
+          <Hash class="w-4 h-4 text-muted-foreground" />
+          <span class="text-sm font-medium">{{ t('collections.allHistory') }}</span>
+        </div>
+        <div
+          class="group relative app-list-item cursor-pointer p-2 flex items-center gap-2 hover:border-border/80 hover:bg-muted"
+          :class="{
+            'app-list-item-active': currentCollectionView === 'all_collections',
+          }"
+          @click="
+            openAllCollectionsView();
+            isSelectingCollection = false;
+          "
+        >
+          <Folder class="w-4 h-4 text-primary" />
+          <span class="text-sm font-medium">{{ t('collections.allCollections') }}</span>
         </div>
         <div
           v-for="collection in collections"
           :key="collection.id"
-          class="group relative rounded-lg border border-transparent hover:bg-accent/50 hover:border-border transition-all cursor-pointer p-2 flex items-center gap-2"
+          class="group relative app-list-item cursor-pointer p-2 flex items-center gap-2 hover:border-border/80 hover:bg-muted"
           :class="{
-            'bg-accent border-primary/20': activeCollectionId === collection.id,
+            'app-list-item-active':
+              currentCollectionView === 'collection_detail' && activeCollectionId === collection.id,
           }"
           @click="
-            activeCollectionId = collection.id;
+            openCollectionView(collection.id);
             isSelectingCollection = false;
           "
         >
@@ -338,10 +428,10 @@ onUnmounted(() => {
         <div
           v-for="(item, index) in filteredHistory"
           :key="item.timestamp"
-          class="group relative rounded-lg border border-transparent hover:bg-accent/50 hover:border-border transition-all cursor-pointer"
+          class="group relative app-list-item cursor-pointer hover:border-border/80 hover:bg-muted/80"
           :class="[
-            index === selectedIndex ? 'bg-accent border-primary/20 selected-item' : '',
-            item.id && selectedIds.includes(item.id) ? 'border-primary bg-accent/30' : '',
+            index === selectedIndex ? 'app-list-item-active selected-item' : '',
+            item.id && selectedIds.includes(item.id) ? 'border-primary/40 bg-primary/10' : '',
             config.compact_mode ? 'p-1.5' : 'p-2',
           ]"
           @click="handleItemClick(item, $event)"
@@ -379,13 +469,11 @@ onUnmounted(() => {
                     formatTimeAgo(item.timestamp)
                   }}</span>
                   <div
-                    v-if="getCollectionName(item.collection_id)"
-                    class="flex items-center gap-1 bg-primary/10 text-primary px-1.5 py-0.5 rounded text-[10px]"
+                    v-if="shouldShowCollectionBadge(item)"
+                    class="flex items-center gap-1 rounded-md border border-primary/15 bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary"
                   >
-                    <Folder class="w-3 h-3" />
-                    <span class="max-w-20 truncate">{{
-                      getCollectionName(item.collection_id)
-                    }}</span>
+                    <Folder class="h-3 w-3" />
+                    <span class="max-w-24 truncate">{{ getCollectionName(item.collection_id) }}</span>
                   </div>
                 </div>
               </div>
@@ -419,11 +507,12 @@ onUnmounted(() => {
                 </div>
 
                 <div
-                  v-if="getCollectionName(item.collection_id)"
-                  class="shrink-0 text-primary opacity-70"
+                  v-if="shouldShowCollectionBadge(item)"
+                  class="flex shrink-0 items-center gap-1 rounded-md border border-primary/15 bg-primary/10 px-1.5 py-0.5 text-[9px] font-medium text-primary"
                   :title="getCollectionName(item.collection_id)"
                 >
-                  <Folder class="w-3 h-3" />
+                  <Folder class="h-2.5 w-2.5" />
+                  <span class="max-w-16 truncate">{{ getCollectionName(item.collection_id) }}</span>
                 </div>
 
                 <span class="text-[9px] font-mono text-muted-foreground opacity-50 shrink-0">{{
@@ -482,7 +571,7 @@ onUnmounted(() => {
             class="absolute right-2 top-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-background/80 backdrop-blur-sm rounded-md p-0.5 shadow-sm border border-border z-20"
             @click.stop
           >
-            <QuickActionMenu :item="item" :on-action-done="() => loadHistory(true)" />
+            <QuickActionMenu :item="item" :on-action-done="handleItemActionDone" />
             <Button
               @click.stop="togglePin(index)"
               size="icon"
@@ -557,8 +646,8 @@ onUnmounted(() => {
           class="flex flex-col items-center justify-center h-40 text-muted-foreground"
         >
           <Command class="w-8 h-8 mb-2 opacity-20" />
-          <p class="text-sm">{{ t('emptyState.title') }}</p>
-          <p class="text-xs opacity-50 mt-1">{{ t('emptyState.subtitle') }}</p>
+          <p class="text-sm">{{ emptyStateTitle }}</p>
+          <p class="text-xs opacity-50 mt-1">{{ emptyStateSubtitle }}</p>
         </div>
       </template>
     </div>

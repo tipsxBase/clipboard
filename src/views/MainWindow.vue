@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, watch, reactive } from 'vue';
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -10,6 +10,8 @@ import { useForm } from 'vee-validate';
 import {
   Search,
   Settings,
+  Minus,
+  Square,
   CaseSensitive,
   Regex,
   Trash2,
@@ -28,7 +30,6 @@ import {
   PinOff,
   Folder,
   FolderPlus,
-  Hash,
   Globe,
   Mail,
   Phone,
@@ -85,11 +86,15 @@ import SelectTrigger from '@/components/ui/select/SelectTrigger.vue';
 import SelectValue from '@/components/ui/select/SelectValue.vue';
 import SelectContent from '@/components/ui/select/SelectContent.vue';
 import SelectItem from '@/components/ui/select/SelectItem.vue';
+import SelectGroup from '@/components/ui/select/SelectGroup.vue';
+import SelectLabel from '@/components/ui/select/SelectLabel.vue';
+import SelectSeparator from '@/components/ui/select/SelectSeparator.vue';
 import ItemEditorDialog from '@/components/ItemEditorDialog.vue';
 import HighlightText from '@/components/HighlightText.vue';
 import QuickActionMenu from '@/components/QuickActionMenu.vue';
 import RuleEditor from '@/components/RuleEditor.vue';
 import { useRules } from '@/composables/useRules';
+import { confirm } from '@/composables/useConfirm';
 import type { Rule } from '@/types';
 
 // Props for update notification
@@ -106,6 +111,8 @@ const emit = defineEmits<{
 const { t } = useI18n();
 const { toastMessage, showToast } = useToast();
 const { formatTimeAgo } = useTimeAgo();
+const currentWindow = getCurrentWindow();
+const isMacPlatform = ref(false);
 
 const handleScreenshot = async () => {
   try {
@@ -124,7 +131,11 @@ const {
   searchCaseSensitive,
   selectedIndex,
   activeFilter,
+  currentCollectionView,
   activeCollectionId,
+  openHistoryView,
+  openAllCollectionsView,
+  openCollectionView,
   previewItem,
   previewContent,
   filteredHistory,
@@ -196,10 +207,144 @@ function getFileIcon(path: string) {
   return Files;
 }
 
-const getCollectionName = (id?: number) => {
-  if (!id) return undefined;
-  return collections.value.find((c) => c.id === id)?.name;
+const getCollection = (id?: number | null) => {
+  if (!id) return null;
+  return collections.value.find((collection) => collection.id === id) || null;
 };
+
+const getCollectionName = (id?: number) => getCollection(id)?.name;
+
+function shouldShowCollectionBadge(item: ClipboardItem) {
+  return currentCollectionView.value !== 'collection_detail' && !!getCollection(item.collection_id);
+}
+
+const totalCollectedCount = computed(() =>
+  collections.value.reduce((sum, collection) => sum + (collection.item_count || 0), 0)
+);
+
+const currentCollection = computed(() =>
+  currentCollectionView.value === 'collection_detail'
+    ? collections.value.find((collection) => collection.id === activeCollectionId.value) || null
+    : null
+);
+
+const currentCollectionFilterValue = computed(() => {
+  if (currentCollectionView.value === 'all_collections') return 'all_collections';
+  if (currentCollectionView.value === 'collection_detail' && activeCollectionId.value !== null) {
+    return `collection:${activeCollectionId.value}`;
+  }
+  return 'history';
+});
+
+const currentCollectionFilterLabel = computed(() => {
+  if (currentCollectionView.value === 'all_collections') {
+    return t('collections.allCollections');
+  }
+
+  if (currentCollectionView.value === 'collection_detail') {
+    return currentCollection.value?.name || t('collections.allCollections');
+  }
+
+  return t('collections.all');
+});
+
+const currentCollectionViewTitle = computed(() => {
+  if (currentCollectionView.value === 'all_collections') {
+    return t('collections.allCollections');
+  }
+
+  if (currentCollectionView.value === 'collection_detail') {
+    return currentCollection.value?.name || t('collections.allCollections');
+  }
+
+  return t('collections.allHistory');
+});
+const hasActiveHistoryFilters = computed(
+  () =>
+    !!searchQuery.value ||
+    activeFilter.value !== 'all' ||
+    !!timeRange.value ||
+    !!searchRegex.value ||
+    !!searchCaseSensitive.value
+);
+
+const emptyStateTitle = computed(() => {
+  if (hasActiveHistoryFilters.value) {
+    return t('emptyState.title');
+  }
+
+  if (currentCollectionView.value === 'all_collections') {
+    return t('emptyState.allCollectionsTitle');
+  }
+
+  if (currentCollectionView.value === 'collection_detail') {
+    return t('emptyState.collectionTitle', {
+      name: currentCollection.value?.name || currentCollectionViewTitle.value,
+    });
+  }
+
+  return t('emptyState.title');
+});
+
+const emptyStateSubtitle = computed(() => {
+  if (hasActiveHistoryFilters.value) {
+    return t('emptyState.subtitle');
+  }
+
+  if (currentCollectionView.value === 'all_collections') {
+    return t('emptyState.allCollectionsSubtitle');
+  }
+
+  if (currentCollectionView.value === 'collection_detail') {
+    return t('emptyState.collectionSubtitle');
+  }
+
+  return t('emptyState.subtitle');
+});
+
+function detectPlatform() {
+  const source = `${navigator.userAgent} ${navigator.platform}`.toLowerCase();
+  isMacPlatform.value = source.includes('mac');
+}
+
+async function startWindowDrag(event: MouseEvent) {
+  if (event.button !== 0) return;
+  try {
+    await currentWindow.startDragging();
+  } catch (error) {
+    console.error('Failed to start window dragging:', error);
+  }
+}
+
+async function minimizeWindow() {
+  try {
+    await currentWindow.minimize();
+  } catch (error) {
+    console.error('Failed to minimize window:', error);
+  }
+}
+
+async function toggleWindowMaximize() {
+  try {
+    await currentWindow.toggleMaximize();
+  } catch (error) {
+    console.error('Failed to toggle maximize:', error);
+  }
+}
+
+async function closeWindow() {
+  try {
+    await currentWindow.close();
+  } catch (error) {
+    console.error('Failed to close window:', error);
+  }
+}
+
+function handleTitlebarDoubleClick() {
+  if (!isMacPlatform.value) {
+    void toggleWindowMaximize();
+  }
+}
 
 function handleScroll(e: Event) {
   const target = e.target as HTMLElement;
@@ -433,14 +578,45 @@ watch(showSettings, (isOpen) => {
 });
 
 const showClearConfirm = ref(false);
-const showCollections = ref(false);
+const showCollectionsManager = ref(false);
 const newCollectionName = ref('');
 const itemToAddToCollection = ref<ClipboardItem | null>(null);
+const currentItemCollection = computed(() =>
+  itemToAddToCollection.value ? getCollection(itemToAddToCollection.value.collection_id) : null
+);
+const collectionDialogTitle = computed(() =>
+  itemToAddToCollection.value?.collection_id
+    ? t('actions.moveToCollection')
+    : t('actions.addToCollection')
+);
 
 async function handleCreateCollection() {
   if (newCollectionName.value.trim()) {
-    await createCollection(newCollectionName.value.trim());
+    const collection = await createCollection(newCollectionName.value.trim());
+    if (collection) {
+      openCollectionView(collection.id);
+      showCollectionsManager.value = false;
+    }
     newCollectionName.value = '';
+  }
+}
+
+function updateCollectionFilter(value: string) {
+  if (value === 'history') {
+    openHistoryView();
+    return;
+  }
+
+  if (value === 'all_collections') {
+    openAllCollectionsView();
+    return;
+  }
+
+  if (value.startsWith('collection:')) {
+    const id = Number(value.split(':')[1]);
+    if (!Number.isNaN(id)) {
+      openCollectionView(id);
+    }
   }
 }
 
@@ -449,6 +625,11 @@ async function handleAddToCollection(collectionId: number | null) {
     await setItemCollection(itemToAddToCollection.value.id, collectionId);
     itemToAddToCollection.value = null;
   }
+}
+
+async function handleItemActionDone() {
+  await loadCollections();
+  await loadHistory(true);
 }
 
 // Collection editor state
@@ -488,6 +669,15 @@ function getCollectionIconComponent(iconName?: string) {
   return icon?.icon || Folder;
 }
 
+function getRuleActionLabel(rule: Rule) {
+  return t(`rules.actionType.${rule.action.action_type}`);
+}
+
+function getRuleTargetCollection(rule: Rule) {
+  if (rule.action.action_type !== 'add_to_collection') return null;
+  return getCollection(rule.action.collection_id);
+}
+
 function openCollectionEditor(collection: Collection) {
   editingCollection.value = collection;
   editingCollectionName.value = collection.name;
@@ -506,6 +696,19 @@ async function handleSaveCollection() {
   );
   showCollectionEditor.value = false;
   editingCollection.value = null;
+}
+
+async function handleDeleteCollection(collection: Collection) {
+  const confirmed = await confirm({
+    title: t('collections.deleteConfirmTitle'),
+    description: t('collections.deleteConfirmDescription', { name: collection.name }),
+    actionText: t('deleteDialog.actionText'),
+    cancelText: t('deleteDialog.cancelText'),
+    variant: 'destructive',
+  });
+  if (!confirmed) return;
+
+  await deleteCollection(collection.id);
 }
 
 // function handleDragStart(e: DragEvent, item: ClipboardItem) {
@@ -568,6 +771,34 @@ function getFilterIcon(filter: string) {
   }
 }
 
+const filterOptions = [
+  'all',
+  'text',
+  'image',
+  'file',
+  'sensitive',
+  'snippet',
+  'url',
+  'email',
+  'code',
+  'phone',
+] as const;
+
+const currentFilterIcon = computed(() => getFilterIcon(activeFilter.value));
+const currentFilterLabel = computed(() => t(`filters.${activeFilter.value}`));
+const timeRangeOptions = computed(() => [
+  { value: 'all', label: t('timeRange.all') },
+  { value: 'today', label: t('timeRange.today') },
+  { value: 'yesterday', label: t('timeRange.yesterday') },
+  { value: 'week', label: t('timeRange.week') },
+  { value: 'month', label: t('timeRange.month') },
+]);
+const currentTimeRangeLabel = computed(
+  () =>
+    timeRangeOptions.value.find((option) => option.value === (timeRange.value ?? 'all'))?.label ??
+    t('timeRange.all')
+);
+
 function handleKeydown(e: KeyboardEvent) {
   // 录制快捷键时，不处理导航事件
   if (isRecording.value || isRecordingScreenshotShortcut.value) {
@@ -607,7 +838,8 @@ function handleKeydown(e: KeyboardEvent) {
       }
       if (isRecordingScreenshotShortcut.value) {
         isRecordingScreenshotShortcut.value = false;
-        tempScreenshotShortcut.value = config.value.screenshot_shortcut || 'CommandOrControl+Shift+S';
+        tempScreenshotShortcut.value =
+          config.value.screenshot_shortcut || 'CommandOrControl+Shift+S';
         invoke('set_recording_screenshot_shortcut', { isRecording: false }).catch(console.error);
       }
       return;
@@ -680,6 +912,7 @@ function handleKeydown(e: KeyboardEvent) {
 }
 
 onMounted(async () => {
+  detectPlatform();
   await loadConfig();
   await loadHistory(true);
   await loadCollections();
@@ -689,16 +922,21 @@ onMounted(async () => {
   window.addEventListener('keydown', handleKeydown);
 
   // Listen for rule-applied events
-  await listen('rule-applied', (event: { payload: { rule?: string; rules?: string[]; action: string } }) => {
-    // Handle both single rule (ignore) and multiple rules (modify) formats
-    const name = event.payload.rule || (event.payload.rules && event.payload.rules[0]) || '';
-    if (name) {
-      showToast(t('rules.ruleApplied', {
-        name,
-        action: event.payload.action,
-      }));
+  await listen(
+    'rule-applied',
+    (event: { payload: { rule?: string; rules?: string[]; action: string } }) => {
+      // Handle both single rule (ignore) and multiple rules (modify) formats
+      const name = event.payload.rule || (event.payload.rules && event.payload.rules[0]) || '';
+      if (name) {
+        showToast(
+          t('rules.ruleApplied', {
+            name,
+            action: event.payload.action,
+          })
+        );
+      }
     }
-  });
+  );
 
   // Listen for screenshot errors (from global shortcut path)
   await listen('screenshot-error', (event: { payload: string }) => {
@@ -706,8 +944,9 @@ onMounted(async () => {
   });
 
   // Focus search on show
-  await listen('tauri://focus', () => {
-    loadHistory(true);
+  await listen('tauri://focus', async () => {
+    await loadCollections();
+    await loadHistory(true);
   });
 });
 
@@ -717,170 +956,268 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="h-screen w-screen bg-background/60 text-foreground flex flex-col overflow-hidden">
+  <div class="app-shell flex flex-col">
+    <div
+      class="app-titlebar"
+      @mousedown="startWindowDrag"
+      @dblclick="handleTitlebarDoubleClick"
+    >
+      <div v-if="isMacPlatform" class="app-titlebar-mac-controls">
+        <button
+          type="button"
+          class="app-titlebar-dot app-titlebar-dot-close"
+          :title="t('actions.close')"
+          @mousedown.stop
+          @click="closeWindow"
+        />
+        <button
+          type="button"
+          class="app-titlebar-dot app-titlebar-dot-minimize"
+          :title="t('actions.minimize')"
+          @mousedown.stop
+          @click="minimizeWindow"
+        />
+        <button
+          type="button"
+          class="app-titlebar-dot app-titlebar-dot-maximize"
+          :title="t('actions.maximize')"
+          @mousedown.stop
+          @click="toggleWindowMaximize"
+        />
+      </div>
+
+      <div class="app-titlebar-brand">Clipboard</div>
+      <div class="app-titlebar-drag" />
+
+      <div class="flex items-center gap-1 shrink-0">
+        <Button
+          @click="showCollectionsManager = true"
+          size="icon"
+          variant="ghost"
+          class="app-titlebar-action"
+          :title="t('actions.collections')"
+          @mousedown.stop
+        >
+          <Folder class="w-3.5 h-3.5" />
+        </Button>
+        <Button
+          @click="openEditor(null)"
+          size="icon"
+          variant="ghost"
+          class="app-titlebar-action"
+          :title="t('actions.addItem')"
+          @mousedown.stop
+        >
+          <Plus class="w-3.5 h-3.5" />
+        </Button>
+        <Button
+          @click="handleScreenshot"
+          size="icon"
+          variant="ghost"
+          class="app-titlebar-action"
+          title="Screenshot"
+          @mousedown.stop
+        >
+          <Camera class="w-3.5 h-3.5" />
+        </Button>
+        <Button
+          @click="togglePause"
+          size="icon"
+          variant="ghost"
+          class="app-titlebar-action"
+          :class="{
+            'border-yellow-500/25 bg-yellow-500/10 text-yellow-700 hover:border-yellow-500/30 hover:bg-yellow-500/15 dark:text-yellow-300':
+              isPaused,
+          }"
+          :title="isPaused ? t('actions.resumeRecording') : t('actions.pauseRecording')"
+          @mousedown.stop
+        >
+          <component :is="isPaused ? Play : Pause" class="w-3.5 h-3.5" />
+        </Button>
+        <Button
+          @click="openSettings"
+          size="icon"
+          variant="ghost"
+          class="app-titlebar-action"
+          :title="t('actions.settings')"
+          @mousedown.stop
+        >
+          <Settings class="w-3.5 h-3.5" />
+        </Button>
+        <Button
+          @click="showClearConfirm = true"
+          size="icon"
+          variant="ghost"
+          class="app-titlebar-action hover:text-destructive"
+          :title="t('actions.clearHistory')"
+          @mousedown.stop
+        >
+          <Trash2 class="w-3.5 h-3.5" />
+        </Button>
+      </div>
+
+      <div v-if="!isMacPlatform" class="app-titlebar-window-controls">
+        <button
+          type="button"
+          class="app-window-control"
+          :title="t('actions.minimize')"
+          @mousedown.stop
+          @click="minimizeWindow"
+        >
+          <Minus class="h-3 w-3" />
+        </button>
+        <button
+          type="button"
+          class="app-window-control"
+          :title="t('actions.maximize')"
+          @mousedown.stop
+          @click="toggleWindowMaximize"
+        >
+          <Square class="h-3 w-3" />
+        </button>
+        <button
+          type="button"
+          class="app-window-control app-window-control-close"
+          :title="t('actions.close')"
+          @mousedown.stop
+          @click="closeWindow"
+        >
+          <X class="h-3 w-3" />
+        </button>
+      </div>
+    </div>
+
     <!-- Header -->
-    <div class="border-b border-border bg-card/40 backdrop-blur-md p-3 space-y-3">
-      <!-- Search Bar -->
-      <div class="relative flex items-center gap-2">
-        <div class="relative flex-1">
-          <Search
-            class="absolute left-2.5 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground"
-          />
-          <Input
-            v-model="searchQuery"
-            class="w-full pl-9 h-8 text-xs relative"
-            :placeholder="t('searchPlaceholder')"
+    <div class="app-header space-y-3">
+      <div class="relative flex items-center">
+        <Search
+          class="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+        />
+        <Input
+          v-model="searchQuery"
+          class="w-full"
+          input-class="app-toolbar-input pl-10 pr-18"
+          :placeholder="t('searchPlaceholder')"
+        />
+        <div class="absolute right-1.5 top-1/2 z-10 flex -translate-y-1/2 items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            class="app-search-toggle"
+            :class="{ 'app-toolbar-button-active': searchCaseSensitive }"
+            @click="searchCaseSensitive = !searchCaseSensitive"
+            :title="t('search.matchCase') || 'Match Case'"
           >
-            <template #icon>
-              <div
-                class="absolute right-1 top-1/2 transform -translate-y-1/2 flex items-center gap-0.5"
-              >
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  class="h-6 w-6 rounded-sm"
-                  :class="{
-                    'bg-accent text-accent-foreground': searchCaseSensitive,
-                  }"
-                  @click="searchCaseSensitive = !searchCaseSensitive"
-                  :title="t('search.matchCase') || 'Match Case'"
-                >
-                  <CaseSensitive class="w-3.5 h-3.5" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  class="h-6 w-6 rounded-sm"
-                  :class="{ 'bg-accent text-accent-foreground': searchRegex }"
-                  @click="searchRegex = !searchRegex"
-                  :title="t('search.regex') || 'Use Regular Expression'"
-                >
-                  <Regex class="w-3.5 h-3.5" />
-                </Button>
+            <CaseSensitive class="h-3 w-3" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            class="app-search-toggle"
+            :class="{ 'app-toolbar-button-active': searchRegex }"
+            @click="searchRegex = !searchRegex"
+            :title="t('search.regex') || 'Use Regular Expression'"
+          >
+            <Regex class="h-3 w-3" />
+          </Button>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-between gap-2">
+        <div class="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto no-scrollbar">
+          <Select
+            :model-value="activeFilter"
+            @update:model-value="(v) => (activeFilter = String(v) as any)"
+          >
+            <SelectTrigger
+              size="xs"
+              class="min-w-[132px] shrink-0 rounded-lg border-border bg-card px-2.5 text-[10px] shadow-none"
+            >
+              <div class="flex min-w-0 items-center gap-2">
+                <component
+                  :is="currentFilterIcon"
+                  v-if="currentFilterIcon"
+                  class="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                />
+                <span class="truncate font-medium">{{ currentFilterLabel }}</span>
               </div>
-            </template>
-          </Input>
-        </div>
-        <div class="text-xs text-muted-foreground whitespace-nowrap shrink-0">
-          {{ totalCount }} {{ t('stats.items') }}
-        </div>
-      </div>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem v-for="filter in filterOptions" :key="filter" :value="filter">
+                <div class="flex items-center gap-2">
+                  <component
+                    :is="getFilterIcon(filter)"
+                    v-if="getFilterIcon(filter)"
+                    class="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                  />
+                  <span>{{ t(`filters.${filter}`) }}</span>
+                </div>
+              </SelectItem>
+            </SelectContent>
+          </Select>
 
-      <!-- Filters & Actions -->
-      <div class="flex items-center justify-between gap-2">
-        <div class="flex gap-1 overflow-x-auto no-scrollbar flex-1">
-          <Button
-            v-for="filter in [
-              'all',
-              'text',
-              'image',
-              'file',
-              'sensitive',
-              'snippet',
-              'url',
-              'email',
-              'code',
-              'phone',
-            ]"
-            :key="filter"
-            @click="activeFilter = filter as any"
-            size="sm"
-            :variant="activeFilter === filter ? 'default' : 'ghost'"
-            class="h-6 text-[10px] uppercase font-bold tracking-wider rounded-full px-2.5 shrink-0"
+          <Select
+            :model-value="currentCollectionFilterValue"
+            @update:model-value="(v) => updateCollectionFilter(String(v))"
           >
-            <component :is="getFilterIcon(filter)" class="w-3 h-3 mr-1" v-if="filter !== 'all'" />
-            {{ t(`filters.${filter}`) }}
-          </Button>
-        </div>
+            <SelectTrigger
+              size="xs"
+              class="min-w-[156px] shrink-0 rounded-lg border-border bg-card px-2.5 text-[10px] shadow-none"
+            >
+              <div class="flex min-w-0 items-center gap-2">
+                <Folder class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                <span class="truncate font-medium">{{ currentCollectionFilterLabel }}</span>
+              </div>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                <SelectLabel>{{ t('collections.scope') }}</SelectLabel>
+                <SelectItem value="history">{{ t('collections.all') }}</SelectItem>
+                <SelectItem value="all_collections">{{ t('collections.allCollections') }}</SelectItem>
+              </SelectGroup>
+              <SelectSeparator v-if="collections.length > 0" />
+              <SelectGroup v-if="collections.length > 0">
+                <SelectLabel>{{ t('collections.saved') }}</SelectLabel>
+                <SelectItem
+                  v-for="collection in collections"
+                  :key="collection.id"
+                  :value="`collection:${collection.id}`"
+                >
+                  {{ collection.name }}
+                </SelectItem>
+              </SelectGroup>
+            </SelectContent>
+          </Select>
 
-        <div class="flex gap-1 shrink-0">
-          <Button
-            @click="showCollections = !showCollections"
-            size="icon"
-            variant="ghost"
-            class="h-7 w-7"
-            :class="{ 'bg-accent text-accent-foreground': showCollections }"
-            :title="t('actions.collections')"
+          <Select
+            :model-value="timeRange ?? 'all'"
+            @update:model-value="(v) => (timeRange = String(v) === 'all' ? null : String(v))"
           >
-            <Folder class="w-4 h-4" />
-          </Button>
-          <Button
-            @click="togglePause"
-            size="icon"
-            variant="ghost"
-            class="h-7 w-7"
-            :class="{ 'text-yellow-500': isPaused }"
-            :title="isPaused ? t('actions.resumeRecording') : t('actions.pauseRecording')"
-          >
-            <component :is="isPaused ? Play : Pause" class="w-4 h-4" />
-          </Button>
-          <Button
-            @click="openEditor(null)"
-            size="icon"
-            variant="ghost"
-            class="h-7 w-7"
-            :title="t('actions.addItem')"
-          >
-            <Plus class="w-4 h-4" />
-          </Button>
-          <Button
-            @click="handleScreenshot"
-            size="icon"
-            variant="ghost"
-            class="h-7 w-7"
-            title="Screenshot"
-          >
-            <Camera class="w-4 h-4" />
-          </Button>
-          <Button
-            @click="openSettings"
-            size="icon"
-            variant="ghost"
-            class="h-7 w-7"
-            :title="t('actions.settings')"
-          >
-            <Settings class="w-4 h-4" />
-          </Button>
-          <Button
-            @click="showClearConfirm = true"
-            size="icon"
-            variant="ghost"
-            class="h-7 w-7 hover:text-destructive"
-            :title="t('actions.clearHistory')"
-          >
-            <Trash2 class="w-4 h-4" />
-          </Button>
-        </div>
-      </div>
+            <SelectTrigger
+              size="xs"
+              class="min-w-[116px] shrink-0 rounded-lg border-border bg-card px-2.5 text-[10px] shadow-none"
+            >
+              <div class="flex min-w-0 items-center gap-1.5">
+                <Clock class="h-3 w-3 shrink-0 text-muted-foreground" />
+                <span class="truncate font-medium">{{ currentTimeRangeLabel }}</span>
+              </div>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem v-for="range in timeRangeOptions" :key="range.value" :value="range.value">
+                {{ range.label }}
+              </SelectItem>
+            </SelectContent>
+          </Select>
 
-      <!-- Time Range & Sort -->
-      <div class="flex items-center justify-between gap-2">
-        <div class="flex gap-1 overflow-x-auto no-scrollbar flex-1">
-          <Button
-            v-for="range in [
-              { value: null, label: t('timeRange.all') },
-              { value: 'today', label: t('timeRange.today') },
-              { value: 'yesterday', label: t('timeRange.yesterday') },
-              { value: 'week', label: t('timeRange.week') },
-              { value: 'month', label: t('timeRange.month') },
-            ]"
-            :key="range.value ?? 'all'"
-            @click="timeRange = range.value"
-            size="sm"
-            :variant="timeRange === range.value ? 'default' : 'ghost'"
-            class="h-6 text-[10px] uppercase font-bold tracking-wider rounded-full px-2.5 shrink-0"
-          >
-            <Clock class="w-3 h-3 mr-1" v-if="range.value" />
-            {{ range.label }}
-          </Button>
-        </div>
-        <div class="flex gap-1 shrink-0">
           <Select
             :model-value="sortMode ?? 'recent'"
             @update:model-value="(v) => (sortMode = String(v) === 'recent' ? null : String(v))"
           >
-            <SelectTrigger class="h-6 w-[100px] text-[10px]">
-              <ArrowUpDown class="w-3 h-3 mr-1 shrink-0" />
+            <SelectTrigger
+              size="xs"
+              class="min-w-[104px] shrink-0 rounded-lg border-border bg-card px-2.5 text-[10px] shadow-none"
+            >
+              <ArrowUpDown class="mr-1 h-3 w-3 shrink-0 text-muted-foreground" />
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -889,85 +1226,25 @@ onUnmounted(() => {
               <SelectItem value="source_app">{{ t('sort.sourceApp') }}</SelectItem>
             </SelectContent>
           </Select>
+
+        </div>
+        <div
+          class="shrink-0 rounded-full border border-border/80 bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground"
+        >
+          {{ totalCount }} {{ t('stats.items') }}
         </div>
       </div>
     </div>
 
     <div class="flex-1 flex overflow-hidden">
-      <!-- Collections Sidebar -->
-      <div
-        v-if="showCollections"
-        class="w-48 border-r border-border bg-card/30 backdrop-blur-sm flex flex-col"
-      >
-        <div class="p-2 border-b border-border flex gap-1">
-          <Input
-            v-model="newCollectionName"
-            class="h-7 text-xs"
-            :placeholder="t('collections.newPlaceholder')"
-            @keydown.enter="handleCreateCollection"
-          />
-          <Button @click="handleCreateCollection" size="icon" variant="ghost" class="h-7 w-7">
-            <Plus class="w-4 h-4" />
-          </Button>
-        </div>
-        <div class="flex-1 overflow-y-auto p-1 space-y-0.5">
-          <Button
-            @click="activeCollectionId = null"
-            variant="ghost"
-            size="sm"
-            class="w-full justify-start text-xs"
-            :class="{ 'bg-accent': activeCollectionId === null }"
-          >
-            <Hash class="w-3 h-3 mr-2" />
-            {{ t('collections.all') }}
-          </Button>
-          <div
-            v-for="collection in collections"
-            :key="collection.id"
-            class="group flex items-center"
-          >
-            <Button
-              @click="activeCollectionId = collection.id"
-              variant="ghost"
-              size="sm"
-              class="flex-1 justify-start text-xs truncate"
-              :class="{ 'bg-accent': activeCollectionId === collection.id }"
-            >
-              <component
-                :is="getCollectionIconComponent(collection.icon)"
-                class="w-3 h-3 mr-2 shrink-0"
-                :style="{ color: collection.color || 'inherit' }"
-              />
-              <span class="truncate">{{ collection.name }}</span>
-            </Button>
-            <Button
-              @click.stop="openCollectionEditor(collection)"
-              variant="ghost"
-              size="icon"
-              class="h-6 w-6 opacity-0 group-hover:opacity-100"
-            >
-              <Edit2 class="w-3 h-3 text-muted-foreground hover:text-primary" />
-            </Button>
-            <Button
-              @click.stop="deleteCollection(collection.id)"
-              variant="ghost"
-              size="icon"
-              class="h-6 w-6 opacity-0 group-hover:opacity-100"
-            >
-              <X class="w-3 h-3 text-muted-foreground hover:text-destructive" />
-            </Button>
-          </div>
-        </div>
-      </div>
-
       <!-- List -->
       <div class="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1" @scroll="handleScroll">
         <div
           v-for="(item, index) in filteredHistory"
           :key="item.id || item.timestamp"
-          class="group relative rounded-lg border border-transparent hover:bg-accent/50 hover:border-border transition-all cursor-pointer"
+          class="group relative app-list-item cursor-pointer hover:border-border/80 hover:bg-muted/80"
           :class="[
-            index === selectedIndex ? 'bg-accent border-primary/20 selected-item' : '',
+            index === selectedIndex ? 'app-list-item-active selected-item' : '',
             config.compact_mode ? 'p-1.5' : 'p-3',
           ]"
           draggable="true"
@@ -1001,11 +1278,15 @@ onUnmounted(() => {
                     formatTimeAgo(item.timestamp)
                   }}</span>
                   <div
-                    v-if="getCollectionName(item.collection_id)"
-                    class="flex items-center gap-1 bg-primary/10 text-primary px-1.5 py-0.5 rounded text-[10px]"
+                    v-if="shouldShowCollectionBadge(item)"
+                    class="flex items-center gap-1 rounded-md border border-primary/15 bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary"
                   >
-                    <Folder class="w-3 h-3" />
-                    <span class="max-w-20 truncate">{{
+                    <component
+                      :is="getCollectionIconComponent(getCollection(item.collection_id)?.icon)"
+                      class="h-3 w-3"
+                      :style="{ color: getCollection(item.collection_id)?.color || 'currentColor' }"
+                    />
+                    <span class="max-w-24 truncate">{{
                       getCollectionName(item.collection_id)
                     }}</span>
                   </div>
@@ -1057,11 +1338,16 @@ onUnmounted(() => {
                 </div>
 
                 <div
-                  v-if="getCollectionName(item.collection_id)"
-                  class="shrink-0 text-primary opacity-70"
+                  v-if="shouldShowCollectionBadge(item)"
+                  class="flex shrink-0 items-center gap-1 rounded-md border border-primary/15 bg-primary/10 px-1.5 py-0.5 text-[9px] font-medium text-primary"
                   :title="getCollectionName(item.collection_id)"
                 >
-                  <Folder class="w-3 h-3" />
+                  <component
+                    :is="getCollectionIconComponent(getCollection(item.collection_id)?.icon)"
+                    class="h-2.5 w-2.5"
+                    :style="{ color: getCollection(item.collection_id)?.color || 'currentColor' }"
+                  />
+                  <span class="max-w-16 truncate">{{ getCollectionName(item.collection_id) }}</span>
                 </div>
 
                 <span class="text-[9px] font-mono text-muted-foreground opacity-50 shrink-0">{{
@@ -1125,7 +1411,11 @@ onUnmounted(() => {
             :class="isMenuOpen(item.id!) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
             @click.stop
           >
-            <QuickActionMenu :item="item" :on-action-done="() => loadHistory(true)" @menu-open="(v) => handleMenuOpen(item.id!, v)" />
+            <QuickActionMenu
+              :item="item"
+              :on-action-done="handleItemActionDone"
+              @menu-open="(v) => handleMenuOpen(item.id!, v)"
+            />
             <Button
               v-if="item.kind !== 'image' && !item.is_sensitive"
               size="icon"
@@ -1151,7 +1441,9 @@ onUnmounted(() => {
               size="icon"
               variant="ghost"
               class="h-6 w-6 text-muted-foreground hover:text-primary"
-              :title="t('actions.addToCollection')"
+              :title="
+                item.collection_id ? t('actions.moveToCollection') : t('actions.addToCollection')
+              "
             >
               <FolderPlus class="w-3.5 h-3.5" />
             </Button>
@@ -1221,8 +1513,8 @@ onUnmounted(() => {
           class="flex flex-col items-center justify-center h-40 text-muted-foreground"
         >
           <Command class="w-8 h-8 mb-2 opacity-20" />
-          <p class="text-sm">{{ t('emptyState.title') }}</p>
-          <p class="text-xs opacity-50 mt-1">{{ t('emptyState.subtitle') }}</p>
+          <p class="text-sm">{{ emptyStateTitle }}</p>
+          <p class="text-xs opacity-50 mt-1">{{ emptyStateSubtitle }}</p>
         </div>
       </div>
     </div>
@@ -1362,7 +1654,7 @@ onUnmounted(() => {
           </div>
         </div>
         <div class="p-3 border-t border-border bg-muted/30 flex justify-end gap-2">
-          <QuickActionMenu :item="previewItem!" :on-action-done="() => loadHistory(true)" />
+          <QuickActionMenu :item="previewItem!" :on-action-done="handleItemActionDone" />
           <Button
             v-if="previewItem.kind === 'image'"
             @click="ocrImage(previewItem!)"
@@ -1384,6 +1676,81 @@ onUnmounted(() => {
       </div>
     </div>
 
+    <!-- Collections Manager Dialog -->
+    <Dialog v-model:open="showCollectionsManager">
+      <DialogContent class="w-[460px]">
+        <DialogHeader>
+          <DialogTitle class="flex items-center gap-2">
+            <Folder class="w-5 h-5 text-primary" /> {{ t('collections.managerTitle') }}
+          </DialogTitle>
+          <DialogDescription>
+            {{ t('collections.allCollections') }} · {{ totalCollectedCount }}
+            {{ t('stats.items') }}
+          </DialogDescription>
+        </DialogHeader>
+        <div class="space-y-4 py-2">
+          <div class="flex gap-2">
+            <Input
+              v-model="newCollectionName"
+              class="flex-1"
+              input-class="h-9 rounded-lg border-border bg-background text-sm shadow-none"
+              :placeholder="t('collections.newPlaceholder')"
+              @keydown.enter="handleCreateCollection"
+            />
+            <Button @click="handleCreateCollection" class="shrink-0">
+              <Plus class="h-4 w-4" />
+            </Button>
+          </div>
+          <div class="max-h-[320px] space-y-1 overflow-y-auto custom-scrollbar">
+            <div
+              v-for="collection in collections"
+              :key="collection.id"
+              class="flex items-center gap-2 rounded-lg border border-border/80 bg-muted/30 px-3 py-2"
+            >
+              <button
+                type="button"
+                class="flex min-w-0 flex-1 items-center gap-2 text-left"
+                @click="
+                  openCollectionView(collection.id);
+                  showCollectionsManager = false;
+                "
+              >
+                <component
+                  :is="getCollectionIconComponent(collection.icon)"
+                  class="h-4 w-4 shrink-0"
+                  :style="{ color: collection.color || 'currentColor' }"
+                />
+                <div class="min-w-0 flex-1">
+                  <div class="truncate text-sm font-medium text-foreground">
+                    {{ collection.name }}
+                  </div>
+                  <div class="text-[11px] text-muted-foreground">
+                    {{ collection.item_count || 0 }} {{ t('stats.items') }}
+                  </div>
+                </div>
+              </button>
+              <Button
+                @click.stop="openCollectionEditor(collection)"
+                variant="ghost"
+                size="icon"
+                class="h-8 w-8 shrink-0"
+              >
+                <Edit2 class="h-3.5 w-3.5 text-muted-foreground" />
+              </Button>
+              <Button
+                @click.stop="handleDeleteCollection(collection)"
+                variant="ghost"
+                size="icon"
+                class="h-8 w-8 shrink-0"
+              >
+                <X class="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+
     <!-- Collection Editor Dialog -->
     <Dialog v-model:open="showCollectionEditor">
       <DialogContent class="w-[400px]">
@@ -1398,7 +1765,7 @@ onUnmounted(() => {
             <Label class="text-xs font-bold text-muted-foreground uppercase tracking-wider">
               {{ t('collections.rename') }}
             </Label>
-            <Input v-model="editingCollectionName" class="h-8" />
+            <Input v-model="editingCollectionName" input-class="h-8" />
           </div>
 
           <!-- Icon Selection -->
@@ -1414,7 +1781,9 @@ onUnmounted(() => {
                 variant="outline"
                 size="icon"
                 class="h-8 w-8"
-                :class="{ 'bg-primary text-primary-foreground': editingCollectionIcon === iconOpt.name }"
+                :class="{
+                  'bg-primary text-primary-foreground': editingCollectionIcon === iconOpt.name,
+                }"
               >
                 <component :is="iconOpt.icon" class="w-4 h-4" />
               </Button>
@@ -1794,9 +2163,26 @@ onUnmounted(() => {
                         {{ rule.name }}
                       </span>
                     </div>
-                    <span class="text-xs text-muted-foreground shrink-0 ml-2">
-                      {{ t(`rules.actionType.${rule.action.action_type}`) }}
-                    </span>
+                    <div class="ml-2 flex shrink-0 items-center gap-2">
+                      <span class="text-xs text-muted-foreground">
+                        {{ getRuleActionLabel(rule) }}
+                      </span>
+                      <div
+                        v-if="rule.action.action_type === 'add_to_collection'"
+                        class="flex max-w-[132px] items-center gap-1 rounded-md border border-primary/15 bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary"
+                      >
+                        <component
+                          :is="getCollectionIconComponent(getRuleTargetCollection(rule)?.icon)"
+                          class="h-3 w-3 shrink-0"
+                          :style="{ color: getRuleTargetCollection(rule)?.color || 'currentColor' }"
+                        />
+                        <span class="truncate">
+                          {{
+                            getRuleTargetCollection(rule)?.name || t('rules.collectionMissing')
+                          }}
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
@@ -1850,38 +2236,62 @@ onUnmounted(() => {
       >
         <div class="p-4 border-b border-border flex justify-between items-center">
           <h3 class="font-medium text-sm">
-            {{ t('actions.addToCollection') }}
+            {{ collectionDialogTitle }}
           </h3>
           <Button @click="itemToAddToCollection = null" size="icon" variant="ghost" class="h-6 w-6">
             <X class="w-4 h-4" />
           </Button>
         </div>
+        <div class="border-b border-border px-4 py-3">
+          <div class="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+            {{ t('collections.currentCollection') }}
+          </div>
+          <div class="mt-2 flex items-center gap-2">
+            <div
+              class="flex items-center gap-1 rounded-md border border-border/80 bg-muted px-2 py-1 text-xs font-medium text-foreground"
+            >
+              <component
+                :is="getCollectionIconComponent(currentItemCollection?.icon)"
+                v-if="currentItemCollection"
+                class="h-3 w-3"
+                :style="{ color: currentItemCollection.color || 'currentColor' }"
+              />
+              <X v-else class="h-3 w-3 text-muted-foreground" />
+              <span>{{ currentItemCollection?.name || t('collections.noCollection') }}</span>
+            </div>
+            <Button
+              v-if="itemToAddToCollection.collection_id !== null"
+              @click="handleAddToCollection(null)"
+              variant="ghost"
+              size="sm"
+              class="h-7 rounded-lg px-2 text-xs text-muted-foreground hover:text-destructive"
+            >
+              {{ t('collections.removeFromCollection') }}
+            </Button>
+          </div>
+        </div>
         <div class="p-2 overflow-y-auto max-h-[300px] space-y-1">
-          <Button
-            @click="handleAddToCollection(null)"
-            variant="ghost"
-            size="sm"
-            class="w-full justify-start text-xs"
-            :class="{
-              'bg-accent': itemToAddToCollection.collection_id === null,
-            }"
-          >
-            <X class="w-3 h-3 mr-2" />
-            {{ t('collections.removeFromCollection') }}
-          </Button>
           <Button
             v-for="collection in collections"
             :key="collection.id"
             @click="handleAddToCollection(collection.id)"
             variant="ghost"
             size="sm"
-            class="w-full justify-start text-xs"
+            class="w-full justify-start rounded-lg border border-transparent px-2.5 text-xs text-muted-foreground hover:border-border/80 hover:bg-muted hover:text-foreground"
             :class="{
-              'bg-accent': itemToAddToCollection.collection_id === collection.id,
+              'border-primary/25 bg-primary/10 text-foreground':
+                itemToAddToCollection.collection_id === collection.id,
             }"
           >
-            <Folder class="w-3 h-3 mr-2" />
-            {{ collection.name }}
+            <component
+              :is="getCollectionIconComponent(collection.icon)"
+              class="mr-2 h-3 w-3"
+              :style="{ color: collection.color || 'currentColor' }"
+            />
+            <span class="flex-1 truncate text-left">{{ collection.name }}</span>
+            <span class="ml-2 shrink-0 text-[10px] text-muted-foreground">
+              {{ collection.item_count || 0 }}
+            </span>
           </Button>
         </div>
       </div>

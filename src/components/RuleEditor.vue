@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Plus, Trash2, X } from 'lucide-vue-next';
+import { Folder, Plus, Trash2, X } from 'lucide-vue-next';
 import Button from '@/components/ui/button/Button.vue';
 import Input from '@/components/ui/input/Input.vue';
 import { Switch } from '@/components/ui/switch';
@@ -26,6 +26,12 @@ const emit = defineEmits<{
 const { t } = useI18n();
 
 const editingRule = ref<Rule>(createDefault());
+const selectedCollection = computed(() =>
+  editingRule.value.action.action_type === 'add_to_collection' && editingRule.value.action.collection_id
+    ? props.collections.find((collection) => collection.id === editingRule.value.action.collection_id) ||
+      null
+    : null
+);
 
 function createDefault(): Rule {
   return {
@@ -79,6 +85,12 @@ function updateCollectionId(id: any) {
 }
 
 function handleSave() {
+  if (
+    editingRule.value.action.action_type === 'add_to_collection' &&
+    !editingRule.value.action.collection_id
+  ) {
+    return;
+  }
   if (!editingRule.value.name.trim()) return;
   emit('save', editingRule.value);
 }
@@ -194,7 +206,7 @@ const actionTypes: RuleAction['action_type'][] = [
           @update:model-value="updateCollectionId($event)"
         >
           <SelectTrigger class="w-full">
-            <SelectValue :placeholder="t('actions.addToCollection')" />
+            <SelectValue :placeholder="t('rules.selectCollection')" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem v-for="col in collections" :key="col.id" :value="String(col.id)">
@@ -202,12 +214,46 @@ const actionTypes: RuleAction['action_type'][] = [
             </SelectItem>
           </SelectContent>
         </Select>
+        <div
+          v-if="selectedCollection"
+          class="mt-2 flex items-center justify-between rounded-lg border border-border/80 bg-muted/40 px-3 py-2"
+        >
+          <div class="flex min-w-0 items-center gap-2">
+            <Folder class="h-3.5 w-3.5 shrink-0" :style="{ color: selectedCollection.color || '' }" />
+            <div class="min-w-0">
+              <div class="text-[11px] font-medium text-muted-foreground">
+                {{ t('rules.targetCollection') }}
+              </div>
+              <div class="truncate text-sm font-medium text-foreground">
+                {{ selectedCollection.name }}
+              </div>
+            </div>
+          </div>
+          <div class="shrink-0 text-[11px] text-muted-foreground">
+            {{ selectedCollection.item_count || 0 }}
+          </div>
+        </div>
+        <p
+          v-else-if="editingRule.action.collection_id"
+          class="mt-2 text-xs text-destructive"
+        >
+          {{ t('rules.collectionMissing') }}
+        </p>
       </div>
     </div>
 
     <!-- Actions -->
     <div class="flex gap-2 pt-2">
-      <Button type="button" size="sm" class="flex-1" @click="handleSave">
+      <Button
+        type="button"
+        size="sm"
+        class="flex-1"
+        :disabled="
+          editingRule.action.action_type === 'add_to_collection' &&
+          !editingRule.action.collection_id
+        "
+        @click="handleSave"
+      >
         {{ t('rules.save') }}
       </Button>
       <Button type="button" size="sm" variant="secondary" class="flex-1" @click="emit('cancel')">

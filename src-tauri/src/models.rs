@@ -39,10 +39,16 @@ pub struct Collection {
     pub id: i64,
     pub name: String,
     pub created_at: String,
+    #[serde(default)]
+    pub updated_at: String,
     #[serde(default = "default_collection_icon")]
     pub icon: String,
     #[serde(default)]
     pub color: String,
+    #[serde(default)]
+    pub sort_order: i64,
+    #[serde(default)]
+    pub item_count: i64,
 }
 
 fn default_collection_icon() -> String {

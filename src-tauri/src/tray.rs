@@ -34,8 +34,14 @@ pub fn create_tray_menu(app: &tauri::AppHandle) -> Result<Menu<Wry>, String> {
 
     // Check for Updates
     let version = app.package_info().version.to_string();
-    let update_item = MenuItem::with_id(app, "check_update", format!("v{}", version), true, None::<&str>)
-        .map_err(|e| e.to_string())?;
+    let update_item = MenuItem::with_id(
+        app,
+        "check_update",
+        format!("v{}", version),
+        true,
+        None::<&str>,
+    )
+    .map_err(|e| e.to_string())?;
     menu.append(&update_item).map_err(|e| e.to_string())?;
 
     // Save version_item to state for later updates

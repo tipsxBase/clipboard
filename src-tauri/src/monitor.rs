@@ -356,7 +356,9 @@ impl ClipboardHandler for ClipboardMonitor {
         if updated {
             let history = state
                 .db
-                .get_history(1, 20, None, false, false, None, None, None, None, None)
+                .get_history(
+                    1, 20, None, false, false, None, None, None, None, None, None,
+                )
                 .unwrap_or_default();
             if let Err(e) = update_tray_menu(&self.app_handle, &history) {
                 log::error!("Failed to update tray: {}", e);
