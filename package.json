@@ -1,7 +1,7 @@
 {
   "name": "clipboard",
   "private": true,
-  "version": "0.5.7",
+  "version": "0.5.8",
   "homepage": "https://tipsxBase.github.io/clipboard/",
   "license": "MIT",
   "type": "module",
