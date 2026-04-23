@@ -1,8 +1,12 @@
 <template>
   <Dialog :open="open" @update:open="$emit('update:open', $event)">
     <DialogContent
-      class="bg-background text-foreground flex flex-col max-w-full!"
-      :class="noteOnly ? 'h-auto w-[400px]!' : 'h-[80vh] w-4/5!'"
+      class="flex flex-col bg-card text-card-foreground"
+      :class="
+        noteOnly
+          ? 'h-auto w-[calc(100%-2rem)] sm:!w-[400px]'
+          : 'h-[80vh] w-[calc(100%-2rem)] max-w-[800px]'
+      "
     >
       <DialogHeader>
         <DialogTitle>{{
@@ -49,7 +53,7 @@
             v-if="isRichTextMode"
             ref="richTextEditorRef"
             contenteditable="true"
-            class="flex-1 w-full p-4 rounded-md border border-input bg-transparent shadow-sm overflow-auto focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring text-sm leading-relaxed"
+            class="flex-1 w-full p-4 rounded-md border border-input bg-background shadow-sm overflow-auto focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring text-sm leading-relaxed"
             @input="handleRichTextInput"
           ></div>
 
@@ -57,7 +61,7 @@
           <textarea
             v-else
             v-model="content"
-            class="flex-1 w-full p-4 rounded-md border border-input bg-transparent shadow-sm resize-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring font-mono text-sm leading-relaxed"
+            class="flex-1 w-full p-4 rounded-md border border-input bg-background shadow-sm resize-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring font-mono text-sm leading-relaxed"
             :placeholder="t('editor.placeholder')"
           ></textarea>
         </div>

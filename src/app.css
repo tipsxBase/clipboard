@@ -283,7 +283,7 @@ body {
   }
 
   .app-toolbar-button-active {
-    @apply border-primary/20 bg-primary/10 text-primary hover:border-primary/30 hover:bg-primary/15 hover:text-primary;
+    @apply border-transparent bg-accent text-accent-foreground hover:border-transparent hover:bg-accent hover:text-accent-foreground;
   }
 
   .app-chip {
@@ -291,15 +291,15 @@ body {
   }
 
   .app-chip-active {
-    @apply border-primary/25 bg-primary text-primary-foreground shadow-sm hover:border-primary/30 hover:bg-primary/90 hover:text-primary-foreground;
+    @apply border-transparent bg-accent text-accent-foreground shadow-sm hover:border-transparent hover:bg-accent hover:text-accent-foreground;
   }
 
   .app-list-item {
-    @apply rounded-xl border border-transparent bg-transparent transition-colors;
+    @apply rounded-xl border border-transparent bg-card/85 transition-colors;
   }
 
   .app-list-item-active {
-    @apply border-primary/25 bg-primary/10 text-foreground shadow-sm;
+    @apply border-transparent bg-accent text-accent-foreground shadow-sm;
   }
 }
 

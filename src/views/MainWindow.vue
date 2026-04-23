@@ -1090,16 +1090,16 @@ onUnmounted(() => {
     <!-- Header -->
     <div class="app-header space-y-3">
       <div class="relative flex items-center">
-        <Search
-          class="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-        />
+        <div class="pointer-events-none absolute inset-y-0 left-0 z-10 flex items-center pl-3">
+          <Search class="h-4 w-4 text-muted-foreground" />
+        </div>
         <Input
           v-model="searchQuery"
           class="w-full"
           input-class="app-toolbar-input pl-10 pr-18"
           :placeholder="t('searchPlaceholder')"
         />
-        <div class="absolute right-1.5 top-1/2 z-10 flex -translate-y-1/2 items-center gap-1">
+        <div class="absolute inset-y-0 right-1.5 z-10 flex items-center gap-1">
           <Button
             variant="ghost"
             size="icon"
@@ -1242,7 +1242,7 @@ onUnmounted(() => {
         <div
           v-for="(item, index) in filteredHistory"
           :key="item.id || item.timestamp"
-          class="group relative app-list-item cursor-pointer hover:border-border/80 hover:bg-muted/80"
+          class="group relative app-list-item cursor-pointer hover:border-transparent hover:bg-accent/70"
           :class="[
             index === selectedIndex ? 'app-list-item-active selected-item' : '',
             config.compact_mode ? 'p-1.5' : 'p-3',
@@ -1407,7 +1407,7 @@ onUnmounted(() => {
 
           <!-- Hover Actions -->
           <div
-            class="absolute right-2 top-2 flex gap-1 bg-background/80 backdrop-blur-sm rounded-md p-0.5 shadow-sm border border-border transition-opacity"
+            class="absolute right-2 top-2 flex gap-1 rounded-md border border-border bg-card p-0.5 shadow-sm transition-opacity"
             :class="isMenuOpen(item.id!) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
             @click.stop
           >
@@ -1566,7 +1566,7 @@ onUnmounted(() => {
     <Transition name="fade">
       <div
         v-if="toastMessage"
-        class="fixed bottom-10 left-1/2 transform -translate-x-1/2 bg-foreground text-background px-4 py-2 rounded-full text-xs font-medium shadow-lg backdrop-blur-sm z-50"
+        class="fixed bottom-10 left-1/2 z-50 -translate-x-1/2 rounded-full bg-foreground px-4 py-2 text-xs font-medium text-background shadow-lg"
       >
         {{ toastMessage }}
       </div>
@@ -1575,13 +1575,13 @@ onUnmounted(() => {
     <!-- Preview Modal -->
     <div
       v-if="previewItem"
-      class="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 sm:p-8"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-background/85 p-4 sm:p-8"
       @click.self="previewItem = null"
     >
       <div
         class="bg-card rounded-xl shadow-2xl border border-border max-w-2xl w-full max-h-[80vh] flex flex-col overflow-hidden"
       >
-        <div class="p-4 border-b border-border flex justify-between items-center bg-muted/30">
+        <div class="flex items-center justify-between border-b border-border bg-card px-4 py-4">
           <div class="flex items-center gap-2 text-muted-foreground">
             <FileText v-if="previewItem.kind === 'text'" class="w-4 h-4" />
             <Files v-else-if="previewItem.kind === 'file'" class="w-4 h-4" />
@@ -1592,7 +1592,7 @@ onUnmounted(() => {
             <X class="w-5 h-5" />
           </Button>
         </div>
-        <div class="p-6 overflow-auto bg-muted/10">
+        <div class="overflow-auto bg-card px-6 py-6">
           <div v-if="previewItem.kind === 'text'" class="flex flex-col gap-2">
             <div v-if="previewItem.html_content" class="flex justify-end">
               <Button
@@ -1653,7 +1653,7 @@ onUnmounted(() => {
             <LocalImage :src="previewItem.content" class="max-w-full rounded-lg shadow-lg" />
           </div>
         </div>
-        <div class="p-3 border-t border-border bg-muted/30 flex justify-end gap-2">
+        <div class="flex justify-end gap-2 border-t border-border bg-card px-3 py-3">
           <QuickActionMenu :item="previewItem!" :on-action-done="handleItemActionDone" />
           <Button
             v-if="previewItem.kind === 'image'"
@@ -1705,7 +1705,7 @@ onUnmounted(() => {
             <div
               v-for="collection in collections"
               :key="collection.id"
-              class="flex items-center gap-2 rounded-lg border border-border/80 bg-muted/30 px-3 py-2"
+              class="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2"
             >
               <button
                 type="button"
@@ -1857,7 +1857,7 @@ onUnmounted(() => {
 
     <!-- Settings Dialog -->
     <Dialog v-model:open="showSettings">
-      <DialogContent class="w-[800px]! max-h-[90vh] overflow-y-auto">
+      <DialogContent class="w-[calc(100%-2rem)] max-w-[800px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle class="flex items-center gap-2">
             <Settings class="w-5 h-5 text-primary" /> {{ t('settings.title') }}
@@ -2228,7 +2228,7 @@ onUnmounted(() => {
     <!-- Collection Selector Modal -->
     <div
       v-if="itemToAddToCollection"
-      class="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-background/85 p-4"
       @click.self="itemToAddToCollection = null"
     >
       <div
@@ -2277,9 +2277,9 @@ onUnmounted(() => {
             @click="handleAddToCollection(collection.id)"
             variant="ghost"
             size="sm"
-            class="w-full justify-start rounded-lg border border-transparent px-2.5 text-xs text-muted-foreground hover:border-border/80 hover:bg-muted hover:text-foreground"
+            class="w-full justify-start rounded-lg border border-transparent px-2.5 text-xs text-muted-foreground hover:border-transparent hover:bg-accent hover:text-accent-foreground"
             :class="{
-              'border-primary/25 bg-primary/10 text-foreground':
+              'border-transparent bg-accent text-accent-foreground':
                 itemToAddToCollection.collection_id === collection.id,
             }"
           >

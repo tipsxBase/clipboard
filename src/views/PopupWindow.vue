@@ -318,9 +318,9 @@ onUnmounted(() => {
     <div class="app-header flex gap-2 items-center">
       <!-- Search Bar -->
       <div class="relative flex-1">
-        <Search
-          class="pointer-events-none absolute left-3 top-1/2 z-10 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
-        />
+        <div class="pointer-events-none absolute inset-y-0 left-0 z-10 flex items-center pl-3">
+          <Search class="h-3.5 w-3.5 text-muted-foreground" />
+        </div>
         <Input
           v-model="searchQuery"
           class="w-full"
@@ -344,7 +344,7 @@ onUnmounted(() => {
 
     <!-- Quick Filters -->
     <div
-      class="border-b border-border/80 bg-muted/30 px-3 py-2 flex items-center gap-1 overflow-x-auto no-scrollbar"
+      class="flex items-center gap-1 overflow-x-auto border-b border-border/80 bg-card px-3 py-2 no-scrollbar"
     >
       <Select
         :model-value="timeRange ?? 'all'"
@@ -382,7 +382,7 @@ onUnmounted(() => {
     <div class="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1">
       <template v-if="isSelectingCollection">
         <div
-          class="group relative app-list-item cursor-pointer p-2 flex items-center gap-2 hover:border-border/80 hover:bg-muted"
+          class="group relative app-list-item cursor-pointer p-2 flex items-center gap-2 hover:border-transparent hover:bg-accent/70"
           :class="{
             'app-list-item-active': currentCollectionView === 'history',
           }"
@@ -395,7 +395,7 @@ onUnmounted(() => {
           <span class="text-sm font-medium">{{ t('collections.allHistory') }}</span>
         </div>
         <div
-          class="group relative app-list-item cursor-pointer p-2 flex items-center gap-2 hover:border-border/80 hover:bg-muted"
+          class="group relative app-list-item cursor-pointer p-2 flex items-center gap-2 hover:border-transparent hover:bg-accent/70"
           :class="{
             'app-list-item-active': currentCollectionView === 'all_collections',
           }"
@@ -410,7 +410,7 @@ onUnmounted(() => {
         <div
           v-for="collection in collections"
           :key="collection.id"
-          class="group relative app-list-item cursor-pointer p-2 flex items-center gap-2 hover:border-border/80 hover:bg-muted"
+          class="group relative app-list-item cursor-pointer p-2 flex items-center gap-2 hover:border-transparent hover:bg-accent/70"
           :class="{
             'app-list-item-active':
               currentCollectionView === 'collection_detail' && activeCollectionId === collection.id,
@@ -428,7 +428,7 @@ onUnmounted(() => {
         <div
           v-for="(item, index) in filteredHistory"
           :key="item.timestamp"
-          class="group relative app-list-item cursor-pointer hover:border-border/80 hover:bg-muted/80"
+          class="group relative app-list-item cursor-pointer hover:border-transparent hover:bg-accent/70"
           :class="[
             index === selectedIndex ? 'app-list-item-active selected-item' : '',
             item.id && selectedIds.includes(item.id) ? 'border-primary/40 bg-primary/10' : '',
@@ -568,7 +568,7 @@ onUnmounted(() => {
 
           <!-- Hover Actions -->
           <div
-            class="absolute right-2 top-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-background/80 backdrop-blur-sm rounded-md p-0.5 shadow-sm border border-border z-20"
+            class="absolute right-2 top-2 z-20 flex gap-1 rounded-md border border-border bg-card p-0.5 opacity-0 shadow-sm transition-opacity group-hover:opacity-100"
             @click.stop
           >
             <QuickActionMenu :item="item" :on-action-done="handleItemActionDone" />
@@ -653,7 +653,7 @@ onUnmounted(() => {
     </div>
 
     <!-- Footer -->
-    <div class="border-t border-border bg-card/40 backdrop-blur-md p-1.5 flex justify-end px-3">
+    <div class="flex justify-end border-t border-border bg-card px-3 py-1.5">
       <div class="flex items-center gap-3 text-[10px] text-muted-foreground">
         <div class="flex items-center gap-1">
           <span class="bg-muted px-1.5 py-0.5 rounded border border-border font-mono text-[9px]"
@@ -680,7 +680,7 @@ onUnmounted(() => {
     <Transition name="fade">
       <div
         v-if="toastMessage"
-        class="fixed bottom-10 left-1/2 transform -translate-x-1/2 bg-foreground text-background px-4 py-2 rounded-full text-xs font-medium shadow-lg backdrop-blur-sm z-50"
+        class="fixed bottom-10 left-1/2 z-50 -translate-x-1/2 rounded-full bg-foreground px-4 py-2 text-xs font-medium text-background shadow-lg"
       >
         {{ toastMessage }}
       </div>
@@ -689,13 +689,13 @@ onUnmounted(() => {
     <!-- Preview Modal -->
     <div
       v-if="previewItem"
-      class="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 sm:p-8"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-background/85 p-4 sm:p-8"
       @click.self="previewItem = null"
     >
       <div
         class="bg-card rounded-xl shadow-2xl border border-border max-w-2xl w-full max-h-[80vh] flex flex-col overflow-hidden"
       >
-        <div class="p-4 border-b border-border flex justify-between items-center bg-muted/30">
+        <div class="flex items-center justify-between border-b border-border bg-card px-4 py-4">
           <div class="flex items-center gap-2 text-muted-foreground">
             <FileText v-if="previewItem.kind === 'text'" class="w-4 h-4" />
             <Files v-else-if="previewItem.kind === 'file'" class="w-4 h-4" />
@@ -706,7 +706,7 @@ onUnmounted(() => {
             <X class="w-5 h-5" />
           </Button>
         </div>
-        <div class="p-6 overflow-auto bg-muted/10">
+        <div class="overflow-auto bg-card px-6 py-6">
           <div v-if="previewItem.kind === 'text'" class="flex flex-col gap-2">
             <div v-if="previewItem.html_content" class="flex justify-end">
               <Button
@@ -767,7 +767,7 @@ onUnmounted(() => {
             <LocalImage :src="previewItem.content" class="max-w-full rounded-lg shadow-lg" />
           </div>
         </div>
-        <div class="p-3 border-t border-border bg-muted/30 flex justify-end gap-2">
+        <div class="flex justify-end gap-2 border-t border-border bg-card px-3 py-3">
           <Button
             v-if="previewItem.kind === 'image'"
             @click="ocrImage(previewItem!)"
