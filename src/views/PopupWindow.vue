@@ -88,6 +88,8 @@ const { config, loadConfig, setupConfigListeners } = useSettings();
 const isSelectingCollection = ref(false);
 const showHtml = ref(false);
 const linkedScreenshot = ref<ClipboardItem | null>(null);
+const lastFocusRefreshAt = ref(0);
+const POPUP_FOCUS_REFRESH_THROTTLE_MS = 600;
 const currentCollectionLabel = computed(() => {
   if (currentCollectionView.value === 'all_collections') return t('collections.allCollections');
   if (currentCollectionView.value === 'collection_detail' && activeCollectionId.value) {
@@ -311,8 +313,13 @@ onMounted(async () => {
 
   // Focus search on show
   await listen('tauri://focus', () => {
+    const now = Date.now();
+    if (now - lastFocusRefreshAt.value < POPUP_FOCUS_REFRESH_THROTTLE_MS) {
+      return;
+    }
+    lastFocusRefreshAt.value = now;
     loadCollections();
-    loadHistory(true);
+    loadHistory(true, { preserveExisting: true });
   });
 });
 

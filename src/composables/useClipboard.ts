@@ -147,14 +147,17 @@ export function useClipboard() {
     setCollectionView('collection_detail', collectionId);
   }
 
-  async function loadHistory(reset = false) {
+  async function loadHistory(reset = false, options?: { preserveExisting?: boolean }) {
     if (isLoading.value) return;
     isLoading.value = true;
 
     try {
+      const preserveExisting = options?.preserveExisting ?? false;
       if (reset) {
         currentPage.value = 1;
-        history.value = [];
+        if (!preserveExisting) {
+          history.value = [];
+        }
         hasMore.value = true;
       }
       const newItems = await invoke<ClipboardItem[]>('get_history', {
