@@ -5,6 +5,7 @@ mod file_manager;
 mod models;
 mod monitor;
 mod ocr;
+mod popup;
 mod rules;
 mod screenshot;
 mod state;
@@ -25,6 +26,7 @@ use crate::db::Database;
 use crate::file_manager::FileManager;
 use crate::models::{AppConfig, ClipboardItem};
 use crate::monitor::ClipboardMonitor;
+use crate::popup::{prepare_popup_window, toggle_popup};
 use crate::state::AppState;
 use crate::storage_paths::StoragePaths;
 use crate::utils::write_to_clipboard;
@@ -86,20 +88,7 @@ pub fn run() {
             {
                 app.set_activation_policy(tauri::ActivationPolicy::Accessory);
                 if let Some(window) = app.get_webview_window("popup") {
-                    // Set collection behavior to show on fullscreen spaces
-                    use objc2::rc::Retained;
-                    use objc2_app_kit::{NSWindow, NSWindowCollectionBehavior};
-                    if let Ok(ns_window) = window.ns_window() {
-                        let ns_window_ptr = ns_window as *mut NSWindow;
-                        unsafe {
-                            let ns_window: Retained<NSWindow> = Retained::retain(ns_window_ptr).unwrap();
-                            ns_window.setCollectionBehavior(
-                                NSWindowCollectionBehavior::CanJoinAllSpaces
-                                    | NSWindowCollectionBehavior::FullScreenAuxiliary
-                                    | NSWindowCollectionBehavior::IgnoresCycle,
-                            );
-                        }
-                    }
+                    prepare_popup_window(&window);
                 }
             }
 
@@ -280,85 +269,7 @@ pub fn run() {
                                 }
                             }
 
-                            if let Some(window) = app.get_webview_window("popup") {
-                                let is_visible = window.is_visible().unwrap_or(false);
-                                if is_visible {
-                                    let _ = window.hide();
-                                } else {
-                                    // Get mouse position
-                                    use mouse_position::mouse_position::Mouse;
-                                    let position = Mouse::get_mouse_position();
-                                    if let Mouse::Position { x, y } = position {
-                                        let mut final_x = x;
-                                        let mut final_y = y;
-                                        log::info!("Mouse Position: ({}, {})", x, y);
-
-                                        if let Ok(monitors) = window.available_monitors() {
-                                            for m in monitors {
-                                                let m_pos = m.position();
-                                                let m_size = m.size();
-                                                let scale = m.scale_factor();
-                                                let x = x * scale as i32;
-                                                let y = y * scale as i32;
-                                                final_x = x;
-                                                final_y = y;
-                                                // Check if mouse is in this monitor
-                                                if x >= m_pos.x
-                                                    && x < m_pos.x + m_size.width as i32
-                                                    && y >= m_pos.y
-                                                    && y < m_pos.y + m_size.height as i32
-                                                {
-                                                    if let Ok(w_size) = window.outer_size() {
-                                                        let w = w_size.width as i32;
-                                                        let h = w_size.height as i32;
-
-                                                        // If window goes off the right edge, shift to left of cursor
-                                                        if x + w > m_pos.x + m_size.width as i32 {
-                                                            final_x = x - w;
-                                                        }
-
-                                                        // If window goes off the bottom edge, shift to above cursor
-                                                        if y + h > m_pos.y + m_size.height as i32 {
-                                                            final_y = y - h;
-                                                        }
-                                                    }
-                                                    break;
-                                                }
-                                            }
-                                        }
-                                        let _ = window.set_position(tauri::Position::Physical(
-                                            tauri::PhysicalPosition {
-                                                x: final_x,
-                                                y: final_y,
-                                            },
-                                        ));
-                                    } else {
-                                        // Fallback to center if mouse position fails
-                                        let _ = window.center();
-                                    }
-
-                                    // Ensure window can show on fullscreen spaces
-                                    #[cfg(target_os = "macos")]
-                                    {
-                                        use objc2::rc::Retained;
-                                        use objc2_app_kit::{NSWindow, NSWindowCollectionBehavior};
-                                        if let Ok(ns_window) = window.ns_window() {
-                                            let ns_window_ptr = ns_window as *mut NSWindow;
-                                            unsafe {
-                                                let ns_window: Retained<NSWindow> = Retained::retain(ns_window_ptr).unwrap();
-                                                ns_window.setCollectionBehavior(
-                                                    NSWindowCollectionBehavior::CanJoinAllSpaces
-                                                        | NSWindowCollectionBehavior::FullScreenAuxiliary
-                                                        | NSWindowCollectionBehavior::IgnoresCycle,
-                                                );
-                                            }
-                                        }
-                                    }
-
-                                    let _ = window.show();
-                                    let _ = window.set_focus();
-                                }
-                            }
+                            toggle_popup(app);
                         }
                     },
                 ) {

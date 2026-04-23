@@ -242,6 +242,15 @@ function handleItemClick(item: any, e: MouseEvent) {
 }
 
 function handleKeydown(e: KeyboardEvent) {
+  const target = e.target as HTMLElement | null;
+  const isInput =
+    !!target && (['INPUT', 'TEXTAREA'].includes(target.tagName) || target.isContentEditable);
+  const isComposing = e.isComposing || (e as KeyboardEvent & { keyCode?: number }).keyCode === 229;
+
+  if ((isInput || isComposing) && e.key !== 'Escape') {
+    return;
+  }
+
   const len = filteredHistory.value.length;
   if (len === 0 && e.key !== 'Escape') return;
 
