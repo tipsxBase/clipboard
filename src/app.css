@@ -267,11 +267,11 @@ body {
   }
 
   .app-header {
-    @apply border-b border-border/80 bg-card px-3 py-3 shadow-sm;
+    @apply border-b border-border/80 bg-card px-3 py-2 shadow-sm;
   }
 
   .app-toolbar-input {
-    @apply h-10 rounded-xl border-border bg-card text-sm shadow-none;
+    @apply h-8 rounded-lg border-border bg-card text-sm shadow-none;
   }
 
   .app-toolbar-button {
@@ -295,7 +295,7 @@ body {
   }
 
   .app-list-item {
-    @apply rounded-xl border border-transparent bg-card/85 transition-colors;
+    @apply rounded-lg border border-transparent bg-card/85 transition-colors;
   }
 
   .app-list-item-active {

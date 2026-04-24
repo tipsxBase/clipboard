@@ -8,7 +8,6 @@ import {
   FileText,
   Image as ImageIcon,
   Lock,
-  Unlock,
   X,
   Eye,
   Command,
@@ -31,7 +30,6 @@ import {
   FileCode,
   Clock,
   ArrowUpDown,
-  Scissors,
 } from 'lucide-vue-next';
 import DOMPurify from 'dompurify';
 import Button from '@/components/ui/button/Button.vue';
@@ -61,10 +59,7 @@ const {
   filteredHistory,
   loadHistory,
   pasteItem,
-  deleteItem,
-  toggleSensitive,
   togglePin,
-  toggleSnippet,
   scrollToSelected,
   setupClipboardListeners,
   selectedIds,
@@ -230,6 +225,38 @@ function getItemIcon(item: any) {
   }
 }
 
+function getItemPrimaryText(item: ClipboardItem) {
+  if (item.note?.trim()) return item.note.trim();
+
+  if (item.kind === 'file') {
+    const files = getFilesList(item.content);
+    if (files.length === 0) return t('collections.allHistory');
+    return files.length === 1 ? files[0] : `${files.length} files`;
+  }
+
+  if (item.kind === 'image') {
+    return item.is_sensitive ? 'Sensitive image' : 'Image item';
+  }
+
+  return item.content;
+}
+
+function getItemSecondaryText(item: ClipboardItem) {
+  if (item.kind === 'text') {
+    if (item.note?.trim()) return item.content;
+    return item.data_type && item.data_type !== 'text' ? item.data_type.toUpperCase() : null;
+  }
+
+  if (item.kind === 'file') {
+    const files = getFilesList(item.content);
+    if (files.length === 0) return null;
+    if (files.length === 1) return files[0];
+    return `${files[0]} + ${files.length - 1} more`;
+  }
+
+  return null;
+}
+
 async function handleItemActionDone() {
   await loadCollections();
   await loadHistory(true);
@@ -340,7 +367,7 @@ onUnmounted(() => {
         <Input
           v-model="searchQuery"
           class="w-full"
-          input-class="app-toolbar-input h-9 rounded-xl pl-9 pr-3 text-sm"
+          input-class="app-toolbar-input h-8 rounded-lg pl-9 pr-3 text-sm"
           :placeholder="currentCollectionLabel"
         />
       </div>
@@ -359,16 +386,14 @@ onUnmounted(() => {
     </div>
 
     <!-- Quick Filters -->
-    <div
-      class="flex items-center gap-1 overflow-x-auto border-b border-border/80 bg-card px-3 py-2 no-scrollbar"
-    >
+    <div class="flex items-center gap-1 overflow-x-auto border-b border-border/80 bg-card px-3 py-1.5 no-scrollbar">
       <Select
         :model-value="timeRange ?? 'all'"
         @update:model-value="(v) => (timeRange = String(v) === 'all' ? null : String(v))"
       >
         <SelectTrigger
           size="xs"
-          class="min-w-[108px] rounded-lg border-border bg-card px-2.5 text-[10px] shadow-none"
+          class="min-w-[104px] rounded-lg border-border bg-card px-2 text-[10px] shadow-none"
         >
           <div class="flex min-w-0 items-center gap-1.5">
             <Clock class="h-3 w-3 shrink-0 text-muted-foreground" />
@@ -395,7 +420,7 @@ onUnmounted(() => {
     </div>
 
     <!-- List -->
-    <div class="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1">
+    <div class="flex-1 overflow-y-auto custom-scrollbar px-2 py-1.5 space-y-1">
       <template v-if="isSelectingCollection">
         <div
           class="group relative app-list-item cursor-pointer p-2 flex items-center gap-2 hover:border-transparent hover:bg-accent/70"
@@ -462,14 +487,14 @@ onUnmounted(() => {
           </div>
 
           <!-- Content -->
-          <div class="flex gap-3" :class="config.compact_mode ? 'items-center' : 'items-start'">
+          <div class="flex items-start gap-2.5">
             <div
               class="rounded-md bg-muted text-muted-foreground shrink-0 relative flex items-center justify-center"
-              :class="config.compact_mode ? 'w-6 h-6 p-1' : 'w-7 h-7 mt-0.5 p-1.5'"
+              :class="config.compact_mode ? 'w-5.5 h-5.5 p-1' : 'w-6 h-6 p-1'"
             >
               <component
                 :is="getItemIcon(item)"
-                :class="config.compact_mode ? 'w-3.5 h-3.5' : 'w-4 h-4'"
+                :class="config.compact_mode ? 'w-3 h-3' : 'w-3.5 h-3.5'"
               />
               <div
                 v-if="item.is_pinned"
@@ -478,113 +503,50 @@ onUnmounted(() => {
                 <Pin class="w-2 h-2" />
               </div>
             </div>
-            <div class="flex-1 min-w-0">
-              <div v-if="!config.compact_mode" class="flex justify-between items-baseline mb-0.5">
-                <div class="flex items-center gap-2">
-                  <span class="text-[10px] font-mono text-muted-foreground opacity-70">{{
-                    formatTimeAgo(item.timestamp)
-                  }}</span>
-                  <div
-                    v-if="shouldShowCollectionBadge(item)"
-                    class="flex items-center gap-1 rounded-md border border-primary/15 bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary"
-                  >
-                    <Folder class="h-3 w-3" />
-                    <span class="max-w-24 truncate">{{ getCollectionName(item.collection_id) }}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div
-                v-if="config.compact_mode"
-                class="flex items-center justify-between gap-2"
-                :class="{ 'pr-6': index < 9 }"
-              >
-                <div class="flex-1 min-w-0 flex items-center gap-2">
-                  <p
-                    v-if="item.kind === 'text'"
-                    class="text-xs text-foreground line-clamp-1 break-all font-medium flex-1"
-                    :class="{
-                      'blur-sm group-hover:blur-none transition-all': item.is_sensitive,
-                      'text-muted-foreground opacity-80': !!item.note,
-                    }"
-                  >
-                    {{ item.content }}
-                  </p>
-                  <p
-                    v-else-if="item.kind === 'file'"
-                    class="text-xs text-foreground line-clamp-1 break-all font-medium flex-1"
-                  >
-                    {{ getFilesList(item.content).length }} Files:
-                    {{ getFilesList(item.content)[0] }}
-                  </p>
-                  <div v-else class="flex items-center gap-2 flex-1">
-                    <span class="text-xs text-muted-foreground italic">[Image]</span>
-                  </div>
-                </div>
-
-                <div
-                  v-if="shouldShowCollectionBadge(item)"
-                  class="flex shrink-0 items-center gap-1 rounded-md border border-primary/15 bg-primary/10 px-1.5 py-0.5 text-[9px] font-medium text-primary"
-                  :title="getCollectionName(item.collection_id)"
-                >
-                  <Folder class="h-2.5 w-2.5" />
-                  <span class="max-w-16 truncate">{{ getCollectionName(item.collection_id) }}</span>
-                </div>
-
-                <span class="text-[9px] font-mono text-muted-foreground opacity-50 shrink-0">{{
-                  formatTimeAgo(item.timestamp)
-                }}</span>
-              </div>
-
-              <template v-else>
-                <p v-if="item.note" class="text-sm font-semibold text-foreground mb-0.5">
-                  {{ item.note }}
-                </p>
+            <div class="min-w-0 flex-1 pr-2">
+              <div class="flex items-start justify-between gap-3">
                 <p
-                  v-if="item.kind === 'text'"
-                  class="text-sm text-foreground line-clamp-2 break-all font-medium"
+                  class="flex-1 text-[13px] font-medium leading-5 text-foreground line-clamp-1 break-all"
                   :class="{
                     'blur-sm group-hover:blur-none transition-all': item.is_sensitive,
-                    'text-muted-foreground text-xs': !!item.note,
+                    'text-muted-foreground': !!item.note && item.kind === 'text',
                   }"
                 >
-                  {{ item.content }}
+                  {{ getItemPrimaryText(item) }}
                 </p>
-                <div v-else-if="item.kind === 'file'" class="flex flex-col gap-1 mt-1">
-                  <div
-                    v-for="(file, i) in getFilesList(item.content).slice(0, 3)"
-                    :key="i"
-                    class="text-xs text-foreground bg-muted/50 px-2 py-1 rounded truncate flex items-center gap-2"
+                <div class="flex shrink-0 items-center gap-1.5 pl-2">
+                  <span
+                    v-if="index < 9"
+                    class="flex h-4 w-4 items-center justify-center rounded border border-border/60 bg-muted/50 text-[9px] font-mono text-muted-foreground"
                   >
-                    <component
-                      :is="getFileIcon(file)"
-                      class="shrink-0 w-4 h-4 text-muted-foreground"
-                    />
-                    <span class="truncate">{{ file }}</span>
-                  </div>
+                    {{ index + 1 }}
+                  </span>
                   <div
-                    v-if="getFilesList(item.content).length > 3"
-                    class="text-[10px] text-muted-foreground pl-1"
+                    v-if="shouldShowCollectionBadge(item)"
+                    class="flex items-center gap-1 rounded-md bg-primary/10 px-1.5 py-0.5 text-[9px] font-medium text-primary"
+                    :title="getCollectionName(item.collection_id)"
                   >
-                    + {{ getFilesList(item.content).length - 3 }} more
+                    <Folder class="h-2.5 w-2.5" />
+                    <span class="max-w-14 truncate">{{ getCollectionName(item.collection_id) }}</span>
                   </div>
+                  <Lock v-if="item.is_sensitive" class="h-3 w-3 shrink-0 text-yellow-600/70" />
+                  <Pin v-if="item.is_pinned" class="h-3 w-3 shrink-0 text-primary/80" />
                 </div>
-                <div
-                  v-else
-                  class="h-16 w-full rounded-md overflow-hidden bg-muted/50 border border-border mt-1"
-                >
-                  <LocalImage
-                    :src="item.content"
-                    class="h-full w-full object-cover opacity-80 group-hover:opacity-100 transition-opacity"
-                  />
-                </div>
-              </template>
+              </div>
+              <div
+                v-if="getItemSecondaryText(item)"
+                class="mt-0.5 flex items-center gap-2 text-[10px] text-muted-foreground"
+              >
+                <span class="line-clamp-1 min-w-0 flex-1 break-all">
+                  {{ getItemSecondaryText(item) }}
+                </span>
+              </div>
             </div>
           </div>
 
           <!-- Hover Actions -->
           <div
-            class="absolute right-2 top-2 z-20 flex gap-1 rounded-md border border-border bg-card p-0.5 opacity-0 shadow-sm transition-opacity group-hover:opacity-100"
+            class="absolute right-1.5 top-1.5 z-20 flex gap-1 rounded-md border border-border bg-card p-0.5 opacity-0 shadow-sm transition-opacity group-hover:opacity-100"
             @click.stop
           >
             <QuickActionMenu :item="item" :on-action-done="handleItemActionDone" />
@@ -599,28 +561,6 @@ onUnmounted(() => {
               <component :is="item.is_pinned ? PinOff : Pin" class="w-3.5 h-3.5" />
             </Button>
             <Button
-              @click.stop="item.id && toggleSnippet(item.id)"
-              size="icon"
-              variant="ghost"
-              class="h-6 w-6"
-              :class="item.is_snippet ? 'text-orange-500' : 'text-muted-foreground'"
-              :title="item.is_snippet ? t('actions.removeSnippet') : t('actions.addSnippet')"
-            >
-              <Scissors class="w-3.5 h-3.5" />
-            </Button>
-            <Button
-              @click.stop="toggleSensitive(index)"
-              size="icon"
-              variant="ghost"
-              class="h-6 w-6"
-              :class="item.is_sensitive ? 'text-yellow-500' : 'text-muted-foreground'"
-              :title="
-                item.is_sensitive ? t('actions.sensitiveTooltip') : t('actions.markSensitive')
-              "
-            >
-              <component :is="item.is_sensitive ? Lock : Unlock" class="w-3.5 h-3.5" />
-            </Button>
-            <Button
               @click.stop="previewItem = item"
               size="icon"
               variant="ghost"
@@ -629,31 +569,6 @@ onUnmounted(() => {
             >
               <Eye class="w-3.5 h-3.5" />
             </Button>
-            <Button
-              @click.stop="deleteItem(index)"
-              size="icon"
-              variant="ghost"
-              class="h-6 w-6 text-muted-foreground hover:text-destructive"
-              :title="t('actions.delete')"
-            >
-              <X class="w-3.5 h-3.5" />
-            </Button>
-          </div>
-
-          <!-- Status / Shortcuts (Visible when NOT hovering) -->
-          <div
-            class="absolute top-2 right-2 flex gap-2 items-center opacity-100 group-hover:opacity-0 transition-opacity pointer-events-none"
-          >
-            <!-- Number Shortcut -->
-            <span
-              v-if="index < 9"
-              class="flex items-center justify-center w-4 h-4 bg-muted/50 text-muted-foreground rounded border border-border/50 text-[9px] font-mono shadow-sm"
-            >
-              {{ index + 1 }}
-            </span>
-
-            <!-- Sensitive Lock -->
-            <Lock v-if="item.is_sensitive" class="w-3 h-3 text-yellow-600/50" />
           </div>
         </div>
 
@@ -669,8 +584,8 @@ onUnmounted(() => {
     </div>
 
     <!-- Footer -->
-    <div class="flex justify-end border-t border-border bg-card px-3 py-1.5">
-      <div class="flex items-center gap-3 text-[10px] text-muted-foreground">
+    <div class="flex justify-end border-t border-border bg-card px-3 py-1">
+      <div class="flex items-center gap-2.5 text-[9px] text-muted-foreground">
         <div class="flex items-center gap-1">
           <span class="bg-muted px-1.5 py-0.5 rounded border border-border font-mono text-[9px]"
             >1-9</span
