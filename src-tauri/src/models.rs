@@ -56,6 +56,64 @@ fn default_collection_icon() -> String {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KnowledgeGroup {
+    pub id: i64,
+    pub name: String,
+    pub created_at: String,
+    #[serde(default)]
+    pub updated_at: String,
+    #[serde(default = "default_knowledge_group_icon")]
+    pub icon: String,
+    #[serde(default)]
+    pub color: String,
+    #[serde(default)]
+    pub sort_order: i64,
+}
+
+fn default_knowledge_group_icon() -> String {
+    "box".to_string()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KnowledgeItem {
+    pub id: i64,
+    pub title: String,
+    #[serde(default)]
+    pub summary: String,
+    #[serde(default)]
+    pub content: String,
+    #[serde(default)]
+    pub knowledge_group_id: Option<i64>,
+    #[serde(default = "default_knowledge_source_kind")]
+    pub source_kind: String,
+    #[serde(default = "default_knowledge_status")]
+    pub status: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+fn default_knowledge_source_kind() -> String {
+    "manual".to_string()
+}
+
+fn default_knowledge_status() -> String {
+    "active".to_string()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KnowledgeItemSeed {
+    pub title: String,
+    #[serde(default)]
+    pub summary: String,
+    #[serde(default)]
+    pub content: String,
+    #[serde(default)]
+    pub knowledge_group_id: Option<i64>,
+    #[serde(default = "default_knowledge_source_kind")]
+    pub source_kind: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     pub shortcut: String,
     pub max_history_size: usize,

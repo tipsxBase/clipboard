@@ -1,14 +1,86 @@
 use chrono::Local;
+use base64::{engine::general_purpose, Engine as _};
 use std::fs;
+use std::io::Write;
+use std::process::Command;
+use tempfile::NamedTempFile;
 use tauri::{Emitter, Manager};
 use tauri_plugin_global_shortcut::GlobalShortcutExt;
 
-use crate::models::{AppConfig, CaptureResult, ClipboardItem, Collection};
+use crate::models::{
+    AppConfig, CaptureResult, ClipboardItem, Collection, KnowledgeGroup, KnowledgeItem,
+    KnowledgeItemSeed,
+};
 use crate::ocr::recognize_text;
 use crate::rules::Rule;
 use crate::state::AppState;
 use crate::tray::{update_pause_menu_item, update_tray_menu};
 use crate::utils::{classify_content, write_to_clipboard};
+
+fn image_path_to_data_url(path: &str) -> Result<String, String> {
+    let bytes = fs::read(path).map_err(|e| format!("Failed to read image: {}", e))?;
+    let ext = std::path::Path::new(path)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_ascii_lowercase())
+        .unwrap_or_else(|| "png".to_string());
+    let mime = match ext.as_str() {
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "bmp" => "image/bmp",
+        "svg" => "image/svg+xml",
+        _ => "image/png",
+    };
+    Ok(format!(
+        "data:{};base64,{}",
+        mime,
+        general_purpose::STANDARD.encode(bytes)
+    ))
+}
+
+fn markdown_image_block(data_url: &str) -> String {
+    format!("![knowledge-image]({})", data_url)
+}
+
+fn decode_data_url_to_temp_file(data_url: &str) -> Result<NamedTempFile, String> {
+    let (_, payload) = data_url
+        .split_once(',')
+        .ok_or_else(|| "Invalid data URL".to_string())?;
+    let bytes = general_purpose::STANDARD
+        .decode(payload)
+        .map_err(|e| format!("Failed to decode data URL: {}", e))?;
+    let mut temp = NamedTempFile::new().map_err(|e| format!("Failed to create temp file: {}", e))?;
+    temp.write_all(&bytes)
+        .map_err(|e| format!("Failed to write temp image: {}", e))?;
+    Ok(temp)
+}
+
+fn build_knowledge_ai_prompt(
+    action: &str,
+    prompt: Option<String>,
+    title: String,
+    summary: Option<String>,
+    content: String,
+) -> String {
+    let summary = summary.unwrap_or_default();
+    let context = format!(
+        "当前知识项信息：\n标题：{}\n摘要：{}\n正文：\n{}\n",
+        title, summary, content
+    );
+
+    match action {
+        "summary" => format!(
+            "{}\n请基于上面的知识项内容生成一段简洁中文摘要，直接输出摘要正文，不要加标题。",
+            context
+        ),
+        _ => format!(
+            "{}\n用户问题：{}\n请只基于当前知识项内容回答；如果内容不足，请明确说明信息不足。",
+            context,
+            prompt.unwrap_or_default()
+        ),
+    }
+}
 
 #[tauri::command]
 pub async fn start_capture(
@@ -741,6 +813,157 @@ pub fn set_item_collection(
 }
 
 #[tauri::command]
+pub fn create_knowledge_group(
+    state: tauri::State<AppState>,
+    name: String,
+    icon: Option<String>,
+    color: Option<String>,
+) -> Result<KnowledgeGroup, String> {
+    state
+        .db
+        .create_knowledge_group(name, icon, color)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_knowledge_groups(state: tauri::State<AppState>) -> Result<Vec<KnowledgeGroup>, String> {
+    state.db.get_knowledge_groups().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_knowledge_group(
+    state: tauri::State<AppState>,
+    id: i64,
+    name: String,
+    icon: Option<String>,
+    color: Option<String>,
+) -> Result<(), String> {
+    state
+        .db
+        .update_knowledge_group(id, name, icon, color)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_knowledge_group(state: tauri::State<AppState>, id: i64) -> Result<(), String> {
+    state
+        .db
+        .delete_knowledge_group(id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn create_knowledge_item(
+    state: tauri::State<AppState>,
+    title: String,
+    summary: Option<String>,
+    content: Option<String>,
+    knowledge_group_id: Option<i64>,
+    source_kind: Option<String>,
+    status: Option<String>,
+) -> Result<KnowledgeItem, String> {
+    state
+        .db
+        .create_knowledge_item(
+            title,
+            summary.unwrap_or_default(),
+            content.unwrap_or_default(),
+            knowledge_group_id,
+            source_kind.unwrap_or_else(|| "manual".to_string()),
+            status,
+        )
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn list_knowledge_items(
+    state: tauri::State<AppState>,
+    query: Option<String>,
+    knowledge_group_id: Option<i64>,
+    include_ungrouped: Option<bool>,
+) -> Result<Vec<KnowledgeItem>, String> {
+    state
+        .db
+        .list_knowledge_items(query, knowledge_group_id, include_ungrouped.unwrap_or(false))
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_knowledge_item(
+    state: tauri::State<AppState>,
+    id: i64,
+) -> Result<Option<KnowledgeItem>, String> {
+    state.db.get_knowledge_item(id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_knowledge_item(
+    state: tauri::State<AppState>,
+    id: i64,
+    title: String,
+    summary: Option<String>,
+    content: Option<String>,
+    knowledge_group_id: Option<i64>,
+    source_kind: Option<String>,
+    status: Option<String>,
+) -> Result<Option<KnowledgeItem>, String> {
+    state
+        .db
+        .update_knowledge_item(
+            id,
+            title,
+            summary.unwrap_or_default(),
+            content.unwrap_or_default(),
+            knowledge_group_id,
+            source_kind.unwrap_or_else(|| "manual".to_string()),
+            status.unwrap_or_else(|| "active".to_string()),
+        )
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_knowledge_item(state: tauri::State<AppState>, id: i64) -> Result<(), String> {
+    state.db.delete_knowledge_item(id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn prepare_knowledge_seed_from_history(
+    state: tauri::State<AppState>,
+    id: i64,
+    knowledge_group_id: Option<i64>,
+) -> Result<KnowledgeItemSeed, String> {
+    let item = state
+        .db
+        .get_item_by_id(id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "History item not found".to_string())?;
+
+    match item.kind.as_str() {
+        "text" => Ok(KnowledgeItemSeed {
+            title: "未命名知识".to_string(),
+            summary: String::new(),
+            content: item
+                .html_content
+                .unwrap_or_else(|| item.content),
+            knowledge_group_id,
+            source_kind: "history_text".to_string(),
+        }),
+        "image" => {
+            let data_url = image_path_to_data_url(&item.content)?;
+            Ok(KnowledgeItemSeed {
+                title: "未命名知识".to_string(),
+                summary: String::new(),
+                content: markdown_image_block(&data_url),
+                knowledge_group_id,
+                source_kind: "history_screenshot".to_string(),
+            })
+        }
+        "file" => Err("File items are not supported for knowledge conversion".to_string()),
+        _ => Err("Unsupported history item type".to_string()),
+    }
+}
+
+#[tauri::command]
 pub fn get_history_count(
     state: tauri::State<AppState>,
     query: Option<String>,
@@ -780,7 +1003,17 @@ pub fn set_paste_stack(
 #[tauri::command]
 pub async fn ocr_image(image_path: String) -> Result<String, String> {
     log::info!("Starting OCR for image: {}", image_path);
-    match recognize_text(&image_path).await {
+    let temp_file = if image_path.starts_with("data:image/") {
+        Some(decode_data_url_to_temp_file(&image_path)?)
+    } else {
+        None
+    };
+    let resolved_path = temp_file
+        .as_ref()
+        .map(|temp| temp.path().to_string_lossy().to_string())
+        .unwrap_or(image_path);
+
+    match recognize_text(&resolved_path).await {
         Ok(text) => {
             log::info!("OCR successful, text length: {}", text.len());
             Ok(text)
@@ -790,6 +1023,45 @@ pub async fn ocr_image(image_path: String) -> Result<String, String> {
             Err(e)
         }
     }
+}
+
+#[tauri::command]
+pub async fn run_knowledge_ai(
+    provider: String,
+    action: String,
+    prompt: Option<String>,
+    title: String,
+    summary: Option<String>,
+    content: String,
+) -> Result<String, String> {
+    let full_prompt = build_knowledge_ai_prompt(&action, prompt, title, summary, content);
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let output = match provider.as_str() {
+            "claude" => Command::new("claude").args(["-p", &full_prompt]).output(),
+            "codex" => Command::new("codex").args(["exec", &full_prompt]).output(),
+            _ => return Err(format!("Unsupported AI provider: {}", provider)),
+        }
+        .map_err(|e| format!("Failed to run {}: {}", provider, e))?;
+
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if stdout.is_empty() {
+                Err(format!("{} returned empty output", provider))
+            } else {
+                Ok(stdout)
+            }
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            Err(if stderr.is_empty() {
+                format!("{} exited with status {}", provider, output.status)
+            } else {
+                stderr
+            })
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 // ==================== 文件管理命令 ====================

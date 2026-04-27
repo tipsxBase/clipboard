@@ -1,5 +1,5 @@
 use crate::crypto::Crypto;
-use crate::models::{ClipboardItem, Collection};
+use crate::models::{ClipboardItem, Collection, KnowledgeGroup, KnowledgeItem};
 use crate::rules::{Rule, RuleAction, RuleCondition};
 use chrono::Local;
 use regex::Regex;
@@ -82,6 +82,63 @@ impl Database {
         Ok(())
     }
 
+    fn ensure_knowledge_schema(conn: &Connection) -> Result<()> {
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS knowledge_groups (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                icon TEXT NOT NULL DEFAULT 'box',
+                color TEXT NOT NULL DEFAULT '',
+                sort_order INTEGER NOT NULL DEFAULT 0
+            )",
+            [],
+        )?;
+
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS knowledge_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                summary TEXT NOT NULL DEFAULT '',
+                content TEXT NOT NULL DEFAULT '',
+                knowledge_group_id INTEGER,
+                source_kind TEXT NOT NULL DEFAULT 'manual',
+                status TEXT NOT NULL DEFAULT 'active',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )",
+            [],
+        )?;
+
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_knowledge_groups_sort_order
+             ON knowledge_groups (sort_order ASC, updated_at DESC, created_at DESC, id DESC)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_knowledge_items_updated_at
+             ON knowledge_items (updated_at DESC, created_at DESC, id DESC)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_knowledge_items_group
+             ON knowledge_items (knowledge_group_id, updated_at DESC)",
+            [],
+        )?;
+
+        Ok(())
+    }
+
+    fn normalize_knowledge_title(title: String) -> String {
+        let trimmed = title.trim();
+        if trimmed.is_empty() {
+            "未命名知识".to_string()
+        } else {
+            trimmed.to_string()
+        }
+    }
+
     /// Create a new database with all tables.
     /// No migration needed - fresh database design.
     pub fn new<P: AsRef<Path>>(path: P, crypto: Arc<Crypto>) -> Result<Self> {
@@ -161,6 +218,7 @@ impl Database {
 
         tx.commit()?;
         Self::ensure_collection_schema(&conn)?;
+        Self::ensure_knowledge_schema(&conn)?;
 
         // Add REGEXP function for search
         conn.create_scalar_function(
@@ -841,6 +899,280 @@ impl Database {
         )?;
         Self::touch_collection_updated_at(&conn, previous_collection_id)?;
         Self::touch_collection_updated_at(&conn, collection_id)?;
+        Ok(())
+    }
+
+    // ==================== Knowledge Group Operations ====================
+
+    pub fn create_knowledge_group(
+        &self,
+        name: String,
+        icon: Option<String>,
+        color: Option<String>,
+    ) -> Result<KnowledgeGroup> {
+        let conn = self.conn.lock().unwrap();
+        let created_at = Self::now_string();
+        let sort_order: i64 = conn.query_row(
+            "SELECT COALESCE(MIN(sort_order) - 1, 0) FROM knowledge_groups",
+            [],
+            |row| row.get(0),
+        )?;
+        let icon = icon.unwrap_or_else(|| "box".to_string());
+        let color = color.unwrap_or_default();
+        conn.execute(
+            "INSERT INTO knowledge_groups (name, created_at, updated_at, icon, color, sort_order)
+             VALUES (?, ?, ?, ?, ?, ?)",
+            params![name, created_at, created_at, icon, color, sort_order],
+        )?;
+        let id = conn.last_insert_rowid();
+        Ok(KnowledgeGroup {
+            id,
+            name,
+            created_at: created_at.clone(),
+            updated_at: created_at,
+            icon,
+            color,
+            sort_order,
+        })
+    }
+
+    pub fn get_knowledge_groups(&self) -> Result<Vec<KnowledgeGroup>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, name, created_at, updated_at, icon, color, sort_order
+             FROM knowledge_groups
+             ORDER BY sort_order ASC, updated_at DESC, created_at DESC, id DESC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(KnowledgeGroup {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                created_at: row.get(2)?,
+                updated_at: row.get(3)?,
+                icon: row.get(4)?,
+                color: row.get(5)?,
+                sort_order: row.get(6)?,
+            })
+        })?;
+
+        let mut groups = Vec::new();
+        for row in rows {
+            groups.push(row?);
+        }
+        Ok(groups)
+    }
+
+    pub fn update_knowledge_group(
+        &self,
+        id: i64,
+        name: String,
+        icon: Option<String>,
+        color: Option<String>,
+    ) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE knowledge_groups
+             SET name = ?, icon = ?, color = ?, updated_at = ?
+             WHERE id = ?",
+            params![
+                name,
+                icon.unwrap_or_else(|| "box".to_string()),
+                color.unwrap_or_default(),
+                Self::now_string(),
+                id
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_knowledge_group(&self, id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE knowledge_items SET knowledge_group_id = NULL WHERE knowledge_group_id = ?",
+            params![id],
+        )?;
+        conn.execute("DELETE FROM knowledge_groups WHERE id = ?", params![id])?;
+        Ok(())
+    }
+
+    // ==================== Knowledge Item Operations ====================
+
+    pub fn create_knowledge_item(
+        &self,
+        title: String,
+        summary: String,
+        content: String,
+        knowledge_group_id: Option<i64>,
+        source_kind: String,
+        status: Option<String>,
+    ) -> Result<KnowledgeItem> {
+        let conn = self.conn.lock().unwrap();
+        let created_at = Self::now_string();
+        let title = Self::normalize_knowledge_title(title);
+        let status = status.unwrap_or_else(|| "active".to_string());
+
+        conn.execute(
+            "INSERT INTO knowledge_items
+             (title, summary, content, knowledge_group_id, source_kind, status, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            params![
+                title,
+                summary,
+                content,
+                knowledge_group_id,
+                source_kind,
+                status,
+                created_at,
+                created_at
+            ],
+        )?;
+
+        let id = conn.last_insert_rowid();
+        Ok(KnowledgeItem {
+            id,
+            title,
+            summary,
+            content,
+            knowledge_group_id,
+            source_kind,
+            status,
+            created_at: created_at.clone(),
+            updated_at: created_at,
+        })
+    }
+
+    pub fn get_knowledge_item(&self, id: i64) -> Result<Option<KnowledgeItem>> {
+        let conn = self.conn.lock().unwrap();
+        conn.query_row(
+            "SELECT id, title, summary, content, knowledge_group_id, source_kind, status, created_at, updated_at
+             FROM knowledge_items WHERE id = ?",
+            params![id],
+            |row| {
+                Ok(KnowledgeItem {
+                    id: row.get(0)?,
+                    title: row.get(1)?,
+                    summary: row.get(2)?,
+                    content: row.get(3)?,
+                    knowledge_group_id: row.get(4)?,
+                    source_kind: row.get(5)?,
+                    status: row.get(6)?,
+                    created_at: row.get(7)?,
+                    updated_at: row.get(8)?,
+                })
+            },
+        )
+        .optional()
+    }
+
+    pub fn list_knowledge_items(
+        &self,
+        query: Option<String>,
+        knowledge_group_id: Option<i64>,
+        include_ungrouped: bool,
+    ) -> Result<Vec<KnowledgeItem>> {
+        let conn = self.conn.lock().unwrap();
+        let mut sql = String::from(
+            "SELECT id, title, summary, content, knowledge_group_id, source_kind, status, created_at, updated_at
+             FROM knowledge_items WHERE 1=1",
+        );
+        let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+        if let Some(q) = query {
+            let trimmed = q.trim();
+            if !trimmed.is_empty() {
+                sql.push_str(" AND (LOWER(title) LIKE LOWER(?) OR LOWER(summary) LIKE LOWER(?) OR LOWER(content) LIKE LOWER(?))");
+                let pattern = format!("%{}%", trimmed);
+                params.push(Box::new(pattern.clone()));
+                params.push(Box::new(pattern.clone()));
+                params.push(Box::new(pattern));
+            }
+        }
+
+        if let Some(group_id) = knowledge_group_id {
+            sql.push_str(" AND knowledge_group_id = ?");
+            params.push(Box::new(group_id));
+        } else if include_ungrouped {
+            sql.push_str(" AND knowledge_group_id IS NULL");
+        }
+
+        sql.push_str(" ORDER BY updated_at DESC, created_at DESC, id DESC");
+
+        let params_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map(params_refs.as_slice(), |row| {
+            Ok(KnowledgeItem {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                summary: row.get(2)?,
+                content: row.get(3)?,
+                knowledge_group_id: row.get(4)?,
+                source_kind: row.get(5)?,
+                status: row.get(6)?,
+                created_at: row.get(7)?,
+                updated_at: row.get(8)?,
+            })
+        })?;
+
+        let mut items = Vec::new();
+        for row in rows {
+            items.push(row?);
+        }
+        Ok(items)
+    }
+
+    pub fn update_knowledge_item(
+        &self,
+        id: i64,
+        title: String,
+        summary: String,
+        content: String,
+        knowledge_group_id: Option<i64>,
+        source_kind: String,
+        status: String,
+    ) -> Result<Option<KnowledgeItem>> {
+        let conn = self.conn.lock().unwrap();
+        let title = Self::normalize_knowledge_title(title);
+        let updated_at = Self::now_string();
+        conn.execute(
+            "UPDATE knowledge_items
+             SET title = ?, summary = ?, content = ?, knowledge_group_id = ?, source_kind = ?, status = ?, updated_at = ?
+             WHERE id = ?",
+            params![
+                title,
+                summary,
+                content,
+                knowledge_group_id,
+                source_kind,
+                status,
+                updated_at,
+                id
+            ],
+        )?;
+
+        conn.query_row(
+            "SELECT id, title, summary, content, knowledge_group_id, source_kind, status, created_at, updated_at
+             FROM knowledge_items WHERE id = ?",
+            params![id],
+            |row| {
+                Ok(KnowledgeItem {
+                    id: row.get(0)?,
+                    title: row.get(1)?,
+                    summary: row.get(2)?,
+                    content: row.get(3)?,
+                    knowledge_group_id: row.get(4)?,
+                    source_kind: row.get(5)?,
+                    status: row.get(6)?,
+                    created_at: row.get(7)?,
+                    updated_at: row.get(8)?,
+                })
+            },
+        )
+        .optional()
+    }
+
+    pub fn delete_knowledge_item(&self, id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM knowledge_items WHERE id = ?", params![id])?;
         Ok(())
     }
 
