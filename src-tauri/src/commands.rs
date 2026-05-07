@@ -150,7 +150,7 @@ pub async fn start_capture(
                 "Creating window for screen {}: {}x{} (logical) at ({},{}), scale: {}",
                 cap.id, logical_width, logical_height, cap.x, cap.y, cap.scale_factor
             );
-            let builder =
+            let mut builder =
                 tauri::WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::App(url.into()))
                     .title("Screenshot")
                     .decorations(false)
@@ -162,6 +162,12 @@ pub async fn start_capture(
                     .resizable(false)
                     .focused(true)
                     .visible(false); // Start hidden to avoid flicker
+
+            // In dev mode, open devtools for debugging
+            #[cfg(debug_assertions)]
+            {
+                builder = builder.devtools(true);
+            }
 
             // Apply macOS specific settings if possible via builder or after
 
@@ -394,15 +400,17 @@ pub fn set_clipboard_item(
     }
 
     // Update DB
-    if let Some(id) = id {
-        if let Err(e) = state.db.update_timestamp(id) {
+    let item_to_emit: Option<ClipboardItem> = if let Some(existing_id) = id {
+        if let Err(e) = state.db.update_timestamp(existing_id) {
             log::error!("Failed to update timestamp: {}", e);
             return Err(e.to_string());
         }
+        // Get the updated item to emit
+        state.db.get_item_by_id(existing_id).unwrap_or(None)
     } else {
         let max_size = state.config.lock().unwrap().max_history_size;
         match state.db.insert_item(&item, max_size) {
-            Ok(pruned_items) => {
+            Ok((new_item, pruned_items)) => {
                 // Delete pruned images
                 for pruned in pruned_items {
                     if pruned.kind == "image" {
@@ -416,12 +424,18 @@ pub fn set_clipboard_item(
                         }
                     }
                 }
+                new_item
             }
             Err(e) => {
                 log::error!("Failed to insert item into DB: {}", e);
                 return Err(e.to_string());
             }
         }
+    };
+
+    // Emit clipboard-update event to notify frontend
+    if let Err(e) = app.emit("clipboard-update", item_to_emit) {
+        log::error!("Failed to emit clipboard-update event: {}", e);
     }
 
     // Update Tray
@@ -466,7 +480,7 @@ pub fn add_to_history(
 
     let max_size = state.config.lock().unwrap().max_history_size;
     match state.db.insert_item(&item, max_size) {
-        Ok(_pruned) => {
+        Ok((_new_item, _pruned)) => {
             // Update Tray
             let history = state
                 .db

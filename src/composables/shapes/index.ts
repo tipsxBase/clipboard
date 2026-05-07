@@ -184,6 +184,7 @@ export interface ControlCircle extends Circle {
 class ShapeRegistryClass {
   private handlers: Map<ShapeType, ShapeHandler> = new Map();
   private _backgroundCanvas: HTMLCanvasElement | null = null;
+  private _selectionOffset: { x: number; y: number } = { x: 0, y: 0 };
 
   /** 注册图形处理器 */
   register<T extends ShapeData>(handler: ShapeHandler<T>): void {
@@ -208,6 +209,16 @@ class ShapeRegistryClass {
   /** 获取背景画布 */
   getBackgroundCanvas(): HTMLCanvasElement | null {
     return this._backgroundCanvas;
+  }
+
+  /** 设置选区偏移（选区在原始截图中的位置） */
+  setSelectionOffset(offset: { x: number; y: number }): void {
+    this._selectionOffset = offset;
+  }
+
+  /** 获取选区偏移 */
+  getSelectionOffset(): { x: number; y: number } {
+    return this._selectionOffset;
   }
 }
 

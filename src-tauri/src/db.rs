@@ -446,7 +446,7 @@ impl Database {
         Ok(items)
     }
 
-    pub fn insert_item(&self, item: &ClipboardItem, max_size: usize) -> Result<Vec<ClipboardItem>> {
+    pub fn insert_item(&self, item: &ClipboardItem, max_size: usize) -> Result<(Option<ClipboardItem>, Vec<ClipboardItem>)> {
         let conn = self.conn.lock().unwrap();
 
         let content_to_store = if item.is_sensitive && item.kind == "text" {
@@ -473,7 +473,7 @@ impl Database {
             params![item.timestamp, item.source_app, html_to_store, content_to_store, item.kind],
         )?;
 
-        if updated_count == 0 {
+        let inserted_or_updated_item: Option<ClipboardItem> = if updated_count == 0 {
             // Insert new item
             conn.execute(
                 "INSERT INTO history (content, kind, timestamp, is_sensitive, is_pinned, source_app, data_type, collection_id, note, html_content, is_snippet, screenshot_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
@@ -492,19 +492,83 @@ impl Database {
                     item.screenshot_id
                 ],
             )?;
-        }
 
-        let effective_collection_id = if updated_count == 0 {
-            item.collection_id
+            // Return the newly inserted item with its ID
+            let id = conn.last_insert_rowid();
+            Some(ClipboardItem {
+                id: Some(id),
+                content: item.content.clone(),
+                kind: item.kind.clone(),
+                timestamp: item.timestamp.clone(),
+                is_sensitive: item.is_sensitive,
+                is_pinned: item.is_pinned,
+                source_app: item.source_app.clone(),
+                data_type: item.data_type.clone(),
+                collection_id: item.collection_id,
+                note: item.note.clone(),
+                html_content: item.html_content.clone(),
+                is_snippet: item.is_snippet,
+                screenshot_id: item.screenshot_id,
+            })
         } else {
-            conn.query_row(
-                "SELECT collection_id FROM history WHERE content = ? AND kind = ?",
+            // Return the updated item - query it to get the ID
+            let existing = conn.query_row(
+                "SELECT id, content, kind, timestamp, is_sensitive, is_pinned, source_app, data_type, collection_id, note, html_content, is_snippet, screenshot_id FROM history WHERE content = ? AND kind = ?",
                 params![content_to_store, item.kind],
-                |row| row.get::<_, Option<i64>>(0),
-            )
-            .optional()?
-            .flatten()
+                |row| {
+                    let id: i64 = row.get(0)?;
+                    let content: String = row.get(1)?;
+                    let kind: String = row.get(2)?;
+                    let timestamp: String = row.get(3)?;
+                    let is_sensitive: bool = row.get(4)?;
+                    let is_pinned: bool = row.get(5)?;
+                    let source_app: Option<String> = row.get(6)?;
+                    let data_type: String = row.get(7)?;
+                    let collection_id: Option<i64> = row.get(8)?;
+                    let note: Option<String> = row.get(9)?;
+                    let html_content: Option<String> = row.get(10)?;
+                    let is_snippet: bool = row.get(11)?;
+                    let screenshot_id: Option<i64> = row.get(12)?;
+
+                    let final_content = if is_sensitive && kind == "text" {
+                        self.crypto.decrypt(&content).unwrap_or(content)
+                    } else {
+                        content
+                    };
+
+                    let final_html = if let Some(html) = html_content {
+                        if is_sensitive {
+                            Some(self.crypto.decrypt(&html).unwrap_or(html))
+                        } else {
+                            Some(html)
+                        }
+                    } else {
+                        None
+                    };
+
+                    Ok(ClipboardItem {
+                        id: Some(id),
+                        content: final_content,
+                        kind,
+                        timestamp,
+                        is_sensitive,
+                        is_pinned,
+                        source_app,
+                        data_type,
+                        collection_id,
+                        note,
+                        html_content: final_html,
+                        is_snippet,
+                        screenshot_id,
+                    })
+                },
+            ).optional()?;
+
+            existing
         };
+
+        // Touch collection updated_at
+        let effective_collection_id = inserted_or_updated_item.as_ref().and_then(|i| i.collection_id);
         Self::touch_collection_updated_at(&conn, effective_collection_id)?;
 
         // Prune if exceeding max_size
@@ -546,10 +610,10 @@ impl Database {
                 }
             }
 
-            return Ok(pruned_items);
+            return Ok((inserted_or_updated_item, pruned_items));
         }
 
-        Ok(Vec::new())
+        Ok((inserted_or_updated_item, Vec::new()))
     }
 
     pub fn delete_item(&self, id: i64) -> Result<Option<ClipboardItem>> {

@@ -14,6 +14,7 @@ import {
   type DrawingConfig,
   ShapeRegistry,
 } from './index';
+import { setDebugState } from './debug';
 
 /** 对 ImageData 应用 StackBlur 算法 */
 function applyBlur(imageData: ImageData, radius: number): void {
@@ -159,13 +160,29 @@ function applyBlur(imageData: ImageData, radius: number): void {
 /** 从背景画布提取区域像素并应用模糊 */
 function createBlurredImage(data: BlurShapeData, blurRadius: number): HTMLCanvasElement | null {
   const bgCanvas = ShapeRegistry.getBackgroundCanvas();
-  if (!bgCanvas) return null;
+  const offset = ShapeRegistry.getSelectionOffset();
 
-  const left = Math.round(Math.min(data.x1, data.x2));
-  const top = Math.round(Math.min(data.y1, data.y2));
+  setDebugState(
+    'lastRegistryBg',
+    bgCanvas ? { width: bgCanvas.width, height: bgCanvas.height } : null
+  );
+  setDebugState('lastRegistryOffset', offset);
+
+  if (!bgCanvas) {
+    return null;
+  }
+
+  // Convert fabric canvas coordinates to original screenshot coordinates
+  const left = Math.round(Math.min(data.x1, data.x2) + offset.x);
+  const top = Math.round(Math.min(data.y1, data.y2) + offset.y);
   const w = Math.round(Math.abs(data.x2 - data.x1));
   const h = Math.round(Math.abs(data.y2 - data.y1));
-  if (w < 2 || h < 2) return null;
+
+  setDebugState('lastImageData', { left, top, w, h });
+
+  if (w < 2 || h < 2) {
+    return null;
+  }
 
   const ctx = bgCanvas.getContext('2d');
   if (!ctx) return null;
@@ -180,6 +197,7 @@ function createBlurredImage(data: BlurShapeData, blurRadius: number): HTMLCanvas
   if (!outCtx) return null;
   outCtx.putImageData(imageData, 0, 0);
 
+  setDebugState('lastBlurCanvas', { width: outCanvas.width, height: outCanvas.height });
   return outCanvas;
 }
 
@@ -189,6 +207,13 @@ export const BlurHandler: ShapeHandler<BlurShapeData> = {
   createData(start: Point2D, current: Point2D): BlurShapeData | null {
     const width = Math.abs(current.x - start.x);
     const height = Math.abs(current.y - start.y);
+
+    setDebugState('lastBlurData', {
+      createDataStart: { x: start.x, y: start.y },
+      createDataCurrent: { x: current.x, y: current.y },
+      size: { w: width, h: height },
+    });
+
     if (width < 2 || height < 2) return null;
 
     return {
@@ -201,13 +226,20 @@ export const BlurHandler: ShapeHandler<BlurShapeData> = {
   },
 
   createPath(data: BlurShapeData, _config: DrawingConfig): FabricObject {
+    console.log('[BlurHandler.createPath] data:', data);
     const blurRadius = 12;
     const blurredCanvas = createBlurredImage(data, blurRadius);
+    console.log(
+      '[BlurHandler.createPath] blurredCanvas:',
+      blurredCanvas ? `${blurredCanvas.width}x${blurredCanvas.height}` : 'null'
+    );
 
     const left = Math.min(data.x1, data.x2);
     const top = Math.min(data.y1, data.y2);
     const w = Math.abs(data.x2 - data.x1);
     const h = Math.abs(data.y2 - data.y1);
+
+    console.log('[BlurHandler.createPath] FabricImage position:', { left, top, w, h });
 
     if (blurredCanvas) {
       const img = new FabricImage(blurredCanvas, {
@@ -223,6 +255,7 @@ export const BlurHandler: ShapeHandler<BlurShapeData> = {
         perPixelTargetFind: false,
         hoverCursor: 'move',
       });
+      console.log('[BlurHandler.createPath] FabricImage created successfully');
       return img;
     }
 

@@ -313,16 +313,16 @@ export function MainWindow() {
     try {
       await invoke('save_config', {
         shortcut: settings.tempShortcut,
-        screenshot_shortcut: settings.tempScreenshotShortcut,
-        max_history_size: settings.tempMaxSize,
+        screenshotShortcut: settings.tempScreenshotShortcut,
+        maxHistorySize: settings.tempMaxSize,
         language: settings.tempLanguage,
         theme: settings.tempTheme,
-        compact_mode: settings.tempCompactMode,
-        clear_pinned_on_clear: settings.tempClearPinnedOnClear,
-        clear_collected_on_clear: settings.tempClearCollectedOnClear,
-        screenshot_format: settings.tempScreenshotFormat,
-        screenshot_quality: settings.tempScreenshotQuality,
-        screenshot_save_action: settings.tempScreenshotSaveAction,
+        compactMode: settings.tempCompactMode,
+        clearPinnedOnClear: settings.tempClearPinnedOnClear,
+        clearCollectedOnClear: settings.tempClearCollectedOnClear,
+        screenshotFormat: settings.tempScreenshotFormat,
+        screenshotQuality: settings.tempScreenshotQuality,
+        screenshotSaveAction: settings.tempScreenshotSaveAction,
       });
       await settings.loadConfig();
     } catch (error) {

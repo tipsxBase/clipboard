@@ -122,16 +122,16 @@ export function useSettings() {
     try {
       await invoke('save_config', {
         shortcut: tempShortcut,
-        max_history_size: tempMaxSize,
+        maxHistorySize: tempMaxSize,
         language: tempLanguage,
         theme: tempTheme,
-        compact_mode: tempCompactMode,
-        clear_pinned_on_clear: tempClearPinnedOnClear,
-        clear_collected_on_clear: tempClearCollectedOnClear,
-        screenshot_shortcut: tempScreenshotShortcut,
-        screenshot_format: tempScreenshotFormat,
-        screenshot_quality: tempScreenshotQuality,
-        screenshot_save_action: tempScreenshotSaveAction,
+        compactMode: tempCompactMode,
+        clearPinnedOnClear: tempClearPinnedOnClear,
+        clearCollectedOnClear: tempClearCollectedOnClear,
+        screenshotShortcut: tempScreenshotShortcut,
+        screenshotFormat: tempScreenshotFormat,
+        screenshotQuality: tempScreenshotQuality,
+        screenshotSaveAction: tempScreenshotSaveAction,
       });
       await loadConfig();
       setShowSettings(false);

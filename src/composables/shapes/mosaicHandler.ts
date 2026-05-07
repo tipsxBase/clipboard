@@ -65,10 +65,12 @@ function applyMosaic(imageData: ImageData, blockSize: number): void {
 /** 从背景画布提取区域像素并应用马赛克 */
 function createMosaicImage(data: MosaicShapeData, blockSize: number): HTMLCanvasElement | null {
   const bgCanvas = ShapeRegistry.getBackgroundCanvas();
+  const offset = ShapeRegistry.getSelectionOffset();
   if (!bgCanvas) return null;
 
-  const left = Math.round(Math.min(data.x1, data.x2));
-  const top = Math.round(Math.min(data.y1, data.y2));
+  // Convert fabric canvas coordinates to original screenshot coordinates
+  const left = Math.round(Math.min(data.x1, data.x2) + offset.x);
+  const top = Math.round(Math.min(data.y1, data.y2) + offset.y);
   const w = Math.round(Math.abs(data.x2 - data.x1));
   const h = Math.round(Math.abs(data.y2 - data.y1));
   if (w < 2 || h < 2) return null;

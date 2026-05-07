@@ -57,6 +57,7 @@ impl ClipboardHandler for ClipboardMonitor {
         let max_size = state.config.lock().unwrap().max_history_size;
 
         let mut captured_something = false;
+        let mut item_to_emit: Option<ClipboardItem> = None;
 
         // Check files
         if let Ok(ctx) = ClipboardContext::new() {
@@ -128,7 +129,7 @@ impl ClipboardHandler for ClipboardMonitor {
                         };
 
                         match state.db.insert_item(&final_item, max_size) {
-                            Ok(pruned_items) => {
+                            Ok((new_item, pruned_items)) => {
                                 for pruned in pruned_items {
                                     if pruned.kind == "image" {
                                         let path = std::path::Path::new(&pruned.content);
@@ -139,6 +140,8 @@ impl ClipboardHandler for ClipboardMonitor {
                                 }
                                 updated = true;
                                 log::info!("New files captured");
+                                // Store the new item to emit later
+                                item_to_emit = new_item;
                             }
                             Err(e) => {
                                 log::error!("Failed to insert file item: {}", e);
@@ -223,7 +226,7 @@ impl ClipboardHandler for ClipboardMonitor {
                     };
 
                     match state.db.insert_item(&final_item, max_size) {
-                        Ok(pruned_items) => {
+                        Ok((new_item, pruned_items)) => {
                             // Delete pruned images
                             for pruned in pruned_items {
                                 if pruned.kind == "image" {
@@ -234,6 +237,7 @@ impl ClipboardHandler for ClipboardMonitor {
                                 }
                             }
                             updated = true;
+                            item_to_emit = new_item;
                             if is_sensitive {
                                 log::info!("New sensitive text captured");
                             } else {
@@ -330,7 +334,7 @@ impl ClipboardHandler for ClipboardMonitor {
                             };
 
                             match state.db.insert_item(&final_item, max_size) {
-                                Ok(pruned_items) => {
+                                Ok((new_item, pruned_items)) => {
                                     // Delete pruned images
                                     for pruned in pruned_items {
                                         if pruned.kind == "image" {
@@ -341,6 +345,7 @@ impl ClipboardHandler for ClipboardMonitor {
                                         }
                                     }
                                     updated = true;
+                                    item_to_emit = new_item;
                                     log::info!("New image captured and saved to {:?}", image_path);
                                 }
                                 Err(e) => {
@@ -364,7 +369,8 @@ impl ClipboardHandler for ClipboardMonitor {
                 log::error!("Failed to update tray: {}", e);
             }
 
-            if let Err(e) = self.app_handle.emit("clipboard-update", ()) {
+            // Emit clipboard-update with the new item data
+            if let Err(e) = self.app_handle.emit("clipboard-update", item_to_emit) {
                 log::error!("Failed to emit clipboard-update event: {}", e);
             }
         }
