@@ -9,7 +9,6 @@ import { enable, disable } from '@tauri-apps/plugin-autostart';
 import {
   Settings,
   Keyboard,
-  Image as ImageIcon,
   History,
   Palette,
   Zap,
@@ -38,7 +37,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Progress } from '@/components/ui/progress';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ShortcutRecorder } from '@/components/ShortcutRecorder';
 import { RuleEditor } from '@/components/RuleEditor';
@@ -59,53 +57,39 @@ const THEMES = [
   { value: 'dark', label: 'Dark' },
 ];
 
-// Screenshot format options
-const SCREENSHOT_FORMATS = [
-  { value: 'png', label: 'PNG' },
-  { value: 'jpeg', label: 'JPEG' },
-  { value: 'webp', label: 'WebP' },
-];
-
-// Screenshot save action options
-const SCREENSHOT_SAVE_ACTIONS = [
-  { value: 'clipboard', label: 'Copy to Clipboard' },
-  { value: 'file', label: 'Save to File' },
-  { value: 'both', label: 'Both' },
-];
-
 export function SettingsDialog({
   open,
   onOpenChange,
   config: _config,
   tempShortcut,
-  tempScreenshotShortcut,
+  tempScreenshotShortcut: _tempScreenshotShortcut,
   tempMaxSize,
   tempLanguage,
   tempTheme,
   tempCompactMode,
   tempClearPinnedOnClear,
   tempClearCollectedOnClear,
-  tempScreenshotFormat,
-  tempScreenshotQuality,
-  tempScreenshotSaveAction,
+  tempScreenshotFormat: _tempScreenshotFormat,
+  tempScreenshotQuality: _tempScreenshotQuality,
+  tempScreenshotSaveAction: _tempScreenshotSaveAction,
   isRecording: _isRecording,
   isRecordingScreenshotShortcut: _isRecordingScreenshotShortcut,
   isAutoStart,
   onSetTempShortcut,
-  onSetTempScreenshotShortcut,
+  onSetTempScreenshotShortcut: _onSetTempScreenshotShortcut,
   onSetTempMaxSize,
   onSetTempLanguage,
   onSetTempTheme,
   onSetTempCompactMode,
   onSetTempClearPinnedOnClear,
   onSetTempClearCollectedOnClear,
-  onSetTempScreenshotFormat,
-  onSetTempScreenshotQuality,
-  onSetTempScreenshotSaveAction,
+  onSetTempScreenshotFormat: _onSetTempScreenshotFormat,
+  onSetTempScreenshotQuality: _onSetTempScreenshotQuality,
+  onSetTempScreenshotSaveAction: _onSetTempScreenshotSaveAction,
   onStartRecordingShortcut: _onStartRecordingShortcut,
   onStartRecordingScreenshotShortcut: _onStartRecordingScreenshotShortcut,
   onStopRecordingShortcut,
-  onStopRecordingScreenshotShortcut,
+  onStopRecordingScreenshotShortcut: _onStopRecordingScreenshotShortcut,
   onToggleAutoStart,
   onSaveConfig,
   onLoadConfig,
@@ -232,9 +216,8 @@ export function SettingsDialog({
   useEffect(() => {
     if (!open) {
       onStopRecordingShortcut();
-      onStopRecordingScreenshotShortcut();
     }
-  }, [open, onStopRecordingShortcut, onStopRecordingScreenshotShortcut]);
+  }, [open, onStopRecordingShortcut]);
 
   // Handle number input change
   const handleMaxSizeChange = useCallback(
@@ -247,16 +230,7 @@ export function SettingsDialog({
     [onSetTempMaxSize]
   );
 
-  // Handle quality slider change
-  const handleQualityChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const value = parseInt(e.target.value);
-      if (!isNaN(value) && value >= 1 && value <= 100) {
-        onSetTempScreenshotQuality(value);
-      }
-    },
-    [onSetTempScreenshotQuality]
-  );
+  // Handle max size change
 
   return (
     <>

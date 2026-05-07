@@ -6,25 +6,13 @@
  */
 import { useEffect, useState, useCallback } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import {
-  Folder,
-  Plus,
-  Camera,
-  Pause,
-  Play,
-  Settings,
-  Trash2,
-  Minus,
-  Square,
-  X,
-} from 'lucide-react';
+import { Folder, Plus, Pause, Play, Settings, Trash2, Minus, Square, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 
 export function Titlebar({
   onOpenCollections,
   onOpenEditor,
-  onScreenshot,
   onOpenSettings,
   onClearHistory,
   isPaused,
@@ -32,7 +20,6 @@ export function Titlebar({
 }: {
   onOpenCollections: () => void;
   onOpenEditor: () => void;
-  onScreenshot: () => void;
   onOpenSettings: () => void;
   onClearHistory: () => void;
   isPaused: boolean;

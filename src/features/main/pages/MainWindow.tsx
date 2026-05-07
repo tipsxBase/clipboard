@@ -310,21 +310,24 @@ export function MainWindow() {
 
   // Save config helper for SettingsDialog
   const handleSaveConfig = useCallback(async () => {
-    const newConfig = {
-      shortcut: settings.tempShortcut,
-      screenshot_shortcut: settings.tempScreenshotShortcut,
-      max_history_size: settings.tempMaxSize,
-      language: settings.tempLanguage,
-      theme: settings.tempTheme,
-      compact_mode: settings.tempCompactMode,
-      clear_pinned_on_clear: settings.tempClearPinnedOnClear,
-      clear_collected_on_clear: settings.tempClearCollectedOnClear,
-      screenshot_format: settings.tempScreenshotFormat,
-      screenshot_quality: settings.tempScreenshotQuality,
-      screenshot_save_action: settings.tempScreenshotSaveAction,
-    };
-    await invoke('save_config', { config: newConfig });
-    await settings.loadConfig();
+    try {
+      await invoke('save_config', {
+        shortcut: settings.tempShortcut,
+        screenshot_shortcut: settings.tempScreenshotShortcut,
+        max_history_size: settings.tempMaxSize,
+        language: settings.tempLanguage,
+        theme: settings.tempTheme,
+        compact_mode: settings.tempCompactMode,
+        clear_pinned_on_clear: settings.tempClearPinnedOnClear,
+        clear_collected_on_clear: settings.tempClearCollectedOnClear,
+        screenshot_format: settings.tempScreenshotFormat,
+        screenshot_quality: settings.tempScreenshotQuality,
+        screenshot_save_action: settings.tempScreenshotSaveAction,
+      });
+      await settings.loadConfig();
+    } catch (error) {
+      console.error('Failed to save config:', error);
+    }
   }, [settings]);
 
   return (
@@ -333,7 +336,6 @@ export function MainWindow() {
       <Titlebar
         onOpenCollections={() => setShowCollectionsManager(true)}
         onOpenEditor={() => handleOpenEditor(null)}
-        onScreenshot={() => {}}
         onOpenSettings={settings.openSettings}
         onClearHistory={() => setShowClearConfirm(true)}
         isPaused={settings.isPaused}
