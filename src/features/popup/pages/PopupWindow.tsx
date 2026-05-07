@@ -349,12 +349,15 @@ export function PopupWindow() {
     let clipboardUnlisten: (() => void) | null = null;
     let configUnlisten: (() => void) | null = null;
     let focusUnlisten: (() => void) | null = null;
+    let mounted = true;
 
     const setup = async () => {
       // Load initial data
       await loadConfig();
       await loadCollections();
       await loadHistory(true);
+
+      if (!mounted) return;
 
       // Setup clipboard-update listener (returns cleanup function)
       clipboardUnlisten = await setupClipboardListeners();
@@ -373,9 +376,22 @@ export function PopupWindow() {
     setup();
 
     return () => {
-      clipboardUnlisten?.();
-      configUnlisten?.();
-      focusUnlisten?.();
+      mounted = false;
+      try {
+        clipboardUnlisten?.();
+      } catch (e) {
+        console.warn('Failed to cleanup clipboard listener:', e);
+      }
+      try {
+        configUnlisten?.();
+      } catch (e) {
+        console.warn('Failed to cleanup config listener:', e);
+      }
+      try {
+        focusUnlisten?.();
+      } catch (e) {
+        console.warn('Failed to cleanup focus listener:', e);
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

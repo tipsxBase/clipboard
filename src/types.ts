@@ -71,6 +71,37 @@ export interface CaptureResult {
   scale_factor: number;
 }
 
+// ==================== 知识库类型定义 ====================
+
+export interface KnowledgeGroup {
+  id: number;
+  name: string;
+  created_at: string;
+  updated_at: string;
+  icon: string;
+  color: string;
+  sort_order: number;
+}
+
+export interface KnowledgeItem {
+  id: number;
+  title: string;
+  summary: string;
+  content: string;
+  knowledge_group_id?: number;
+  source_kind: 'manual' | 'clipboard';
+  status: 'active' | 'archived';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface KnowledgeItemSeed {
+  title: string;
+  content: string;
+  source_kind: string;
+  knowledge_group_id?: number;
+}
+
 // ==================== 截图工作流状态 ====================
 
 /**

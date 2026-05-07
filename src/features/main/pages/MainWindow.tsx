@@ -245,12 +245,15 @@ export function MainWindow() {
     let configUnlisten: (() => void) | null = null;
     let settingsUnlisten: (() => void) | null = null;
     let focusUnlisten: (() => void) | null = null;
+    let mounted = true;
 
     const setup = async () => {
       // Load initial data
       await settings.loadConfig();
       await clipboard.loadCollections();
       await clipboard.loadHistory(true);
+
+      if (!mounted) return;
 
       // Setup clipboard-update listener (returns cleanup function)
       clipboardUnlisten = await clipboard.setupClipboardListeners();
@@ -273,10 +276,27 @@ export function MainWindow() {
     setup();
 
     return () => {
-      clipboardUnlisten?.();
-      configUnlisten?.();
-      settingsUnlisten?.();
-      focusUnlisten?.();
+      mounted = false;
+      try {
+        clipboardUnlisten?.();
+      } catch (e) {
+        console.warn('Failed to cleanup clipboard listener:', e);
+      }
+      try {
+        configUnlisten?.();
+      } catch (e) {
+        console.warn('Failed to cleanup config listener:', e);
+      }
+      try {
+        settingsUnlisten?.();
+      } catch (e) {
+        console.warn('Failed to cleanup settings listener:', e);
+      }
+      try {
+        focusUnlisten?.();
+      } catch (e) {
+        console.warn('Failed to cleanup focus listener:', e);
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
