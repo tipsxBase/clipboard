@@ -1,7 +1,7 @@
 import { useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { invoke } from '@tauri-apps/api/core';
-import { KnowledgeGroupList } from '../components/KnowledgeGroupList';
+import { KnowledgeSidebar } from '../components/KnowledgeSidebar';
 import { KnowledgeItemList } from '../components/KnowledgeItemList';
 import { KnowledgeDetailPanel } from '../components/KnowledgeDetailPanel';
 import { useKnowledge } from '../hooks/useKnowledge';
@@ -153,22 +153,20 @@ export function KnowledgePage({
   );
 
   return (
-    <div className="flex h-full overflow-hidden">
-      {/* Left: Group list */}
-      <div className="w-40 shrink-0 border-r border-border/40 overflow-hidden flex flex-col">
-        <KnowledgeGroupList
-          groups={kb.groups}
-          activeFilter={kb.groupFilter}
-          onFilterChange={kb.setGroupFilter}
-          onCreateGroup={handleCreateGroup}
-          onDeleteGroup={handleDeleteGroup}
-          onUpdateGroup={handleUpdateGroup}
-          onNewKnowledge={handleNewKnowledge}
-        />
-      </div>
+    <div className="flex h-full overflow-hidden bg-[var(--bg-base)]">
+      {/* Left: Premium Sidebar */}
+      <KnowledgeSidebar
+        groups={kb.groups}
+        activeFilter={kb.groupFilter}
+        onFilterChange={kb.setGroupFilter}
+        onCreateGroup={handleCreateGroup}
+        onDeleteGroup={handleDeleteGroup}
+        onUpdateGroup={handleUpdateGroup}
+        onNewKnowledge={handleNewKnowledge}
+      />
 
       {/* Middle: Item list */}
-      <div className="w-44 shrink-0 border-r border-border/40 overflow-hidden flex flex-col">
+      <div className="w-[280px] shrink-0 border-r border-border/30 overflow-hidden flex flex-col bg-[var(--bg-elevated)]">
         <KnowledgeItemList
           items={kb.items}
           selectedItem={kb.selectedItem}
@@ -181,7 +179,7 @@ export function KnowledgePage({
       </div>
 
       {/* Right: Detail panel */}
-      <div className="flex-1 min-w-0 overflow-hidden">
+      <div className="flex-1 min-w-0 overflow-hidden bg-[var(--bg-elevated)]">
         <KnowledgeDetailPanel
           item={kb.selectedItem}
           groups={kb.groups}

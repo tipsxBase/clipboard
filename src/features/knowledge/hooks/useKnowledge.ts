@@ -2,7 +2,14 @@ import { useState, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import type { KnowledgeGroup, KnowledgeItem } from '@/types';
 
-export type KnowledgeGroupFilter = 'all' | 'ungrouped' | 'archived' | { groupId: number };
+export type KnowledgeGroupFilter =
+  | 'all'
+  | 'ungrouped'
+  | 'archived'
+  | 'ai'
+  | 'favorites'
+  | 'recent'
+  | { groupId: number };
 
 export interface UseKnowledgeReturn {
   groups: KnowledgeGroup[];
