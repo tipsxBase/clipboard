@@ -212,38 +212,39 @@ pub fn run() {
                 update_info: Arc::new(Mutex::new(None)),
             });
 
+            // TODO: 截屏功能暂时隐藏，后续有时间完善后再启用
             // 注册截图快捷键
-            if !screenshot_shortcut_key.is_empty() {
-                let screenshot_handle = handle.clone();
-                let shortcut_manager = app.global_shortcut();
-                if let Err(e) = shortcut_manager.on_shortcut(
-                    screenshot_shortcut_key.as_str(),
-                    move |_app, _shortcut, event| {
-                        if event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed {
-                            // Check if recording screenshot shortcut - ignore trigger
-                            let state = _app.state::<AppState>();
-                            if let Ok(is_recording) = state.is_recording_screenshot_shortcut.lock() {
-                                if *is_recording {
-                                    log::info!("Screenshot shortcut ignored during recording");
-                                    return;
-                                }
-                            }
-                            let handle = screenshot_handle.clone();
-                            tauri::async_runtime::spawn(async move {
-                                if let Err(e) =
-                                    crate::commands::start_capture(handle.clone(), handle.state())
-                                        .await
-                                {
-                                    log::error!("Screenshot shortcut failed: {}", e);
-                                    let _ = handle.emit("screenshot-error", e);
-                                }
-                            });
-                        }
-                    },
-                ) {
-                    log::warn!("Failed to register screenshot shortcut: {}", e);
-                }
-            }
+            // if !screenshot_shortcut_key.is_empty() {
+            //     let screenshot_handle = handle.clone();
+            //     let shortcut_manager = app.global_shortcut();
+            //     if let Err(e) = shortcut_manager.on_shortcut(
+            //         screenshot_shortcut_key.as_str(),
+            //         move |_app, _shortcut, event| {
+            //             if event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed {
+            //                 // Check if recording screenshot shortcut - ignore trigger
+            //                 let state = _app.state::<AppState>();
+            //                 if let Ok(is_recording) = state.is_recording_screenshot_shortcut.lock() {
+            //                     if *is_recording {
+            //                         log::info!("Screenshot shortcut ignored during recording");
+            //                         return;
+            //                     }
+            //                 }
+            //                 let handle = screenshot_handle.clone();
+            //                 tauri::async_runtime::spawn(async move {
+            //                     if let Err(e) =
+            //                         crate::commands::start_capture(handle.clone(), handle.state())
+            //                             .await
+            //                     {
+            //                         log::error!("Screenshot shortcut failed: {}", e);
+            //                         let _ = handle.emit("screenshot-error", e);
+            //                     }
+            //                 });
+            //             }
+            //         },
+            //     ) {
+            //         log::warn!("Failed to register screenshot shortcut: {}", e);
+            //     }
+            // }
 
             // 注册主窗口或弹出窗口快捷键
             if !shortcut_key.is_empty() {
