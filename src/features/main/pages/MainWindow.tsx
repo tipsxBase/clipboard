@@ -6,10 +6,11 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
-import { Power, ArrowUpDown, Command } from 'lucide-react';
+import { Power, ArrowUpDown, Command, Clipboard, BookOpen } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { Titlebar } from '../components/Titlebar';
+import { KnowledgePage } from '@/features/knowledge/pages/KnowledgePage';
 import { SearchToolbar } from '../components/SearchToolbar';
 import { FilterToolbar } from '../components/FilterToolbar';
 import { ClipboardList } from '../components/ClipboardList';
@@ -78,6 +79,13 @@ export function MainWindow() {
   const [showCollectionsManager, setShowCollectionsManager] = useState(false);
   const [menuOpenIds, setMenuOpenIds] = useState<Set<number>>(new Set());
   const [showPermissionDialog, setShowPermissionDialog] = useState(false);
+  const [activeTab, setActiveTab] = useState<'clipboard' | 'knowledge'>('clipboard');
+  const [pendingKnowledgeContent, setPendingKnowledgeContent] = useState<string | null>(null);
+
+  const handleSaveToKnowledge = useCallback((item: ClipboardItem) => {
+    setPendingKnowledgeContent(item.content ?? '');
+    setActiveTab('knowledge');
+  }, []);
 
   // Refs for tracking and keyboard handler
   const lastFocusRefreshAtRef = useRef(0);
@@ -362,101 +370,144 @@ export function MainWindow() {
         onTogglePause={settings.togglePause}
       />
 
-      {/* Header: Search */}
-      <div className="app-header space-y-3">
-        <SearchToolbar
-          searchQuery={clipboard.searchQuery}
-          onSearchChange={clipboard.setSearchQuery}
-          searchCaseSensitive={clipboard.searchCaseSensitive}
-          onCaseSensitiveChange={clipboard.setSearchCaseSensitive}
-          searchRegex={clipboard.searchRegex}
-          onRegexChange={clipboard.setSearchRegex}
-        />
-
-        <FilterToolbar
-          activeFilter={clipboard.activeFilter as FilterType}
-          onFilterChange={(v) => clipboard.setActiveFilter(v)}
-          collections={clipboard.collections}
-          collectionFilterValue={getCollectionFilterValue()}
-          onCollectionFilterChange={handleCollectionFilterChange}
-          timeRange={clipboard.timeRange}
-          onTimeRangeChange={clipboard.setTimeRange}
-          sortMode={clipboard.sortMode}
-          onSortModeChange={clipboard.setSortMode}
-          totalCount={clipboard.totalCount}
-        />
+      {/* Tab Bar */}
+      <div className="flex border-b border-border/40 bg-card shrink-0">
+        <button
+          type="button"
+          className={`flex items-center gap-1.5 px-4 py-2 text-xs font-medium transition-colors border-b-2 -mb-px ${
+            activeTab === 'clipboard'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          }`}
+          onClick={() => setActiveTab('clipboard')}
+        >
+          <Clipboard className="w-3.5 h-3.5" />
+          {t('knowledge.tabClipboard')}
+        </button>
+        <button
+          type="button"
+          className={`flex items-center gap-1.5 px-4 py-2 text-xs font-medium transition-colors border-b-2 -mb-px ${
+            activeTab === 'knowledge'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          }`}
+          onClick={() => setActiveTab('knowledge')}
+        >
+          <BookOpen className="w-3.5 h-3.5" />
+          {t('knowledge.tabKnowledge')}
+        </button>
       </div>
 
-      {/* Clipboard List */}
-      <div className="flex-1 flex overflow-hidden">
-        <ClipboardList
-          items={clipboard.filteredHistory}
-          selectedIndex={clipboard.selectedIndex}
-          compactMode={settings.config.compact_mode}
-          searchQuery={clipboard.searchQuery}
-          searchRegex={clipboard.searchRegex}
-          searchCaseSensitive={clipboard.searchCaseSensitive}
-          collections={clipboard.collections}
-          currentCollectionView={clipboard.currentCollectionView}
-          onItemClick={handleItemClick}
-          onItemMouseEnter={clipboard.setSelectedIndex}
-          onTogglePin={clipboard.togglePin}
-          onToggleSnippet={clipboard.toggleSnippet}
-          onToggleSensitive={clipboard.toggleSensitive}
-          onPreview={clipboard.setPreviewItem}
-          onDelete={clipboard.deleteItem}
-          onEdit={(item) => handleOpenEditor(item)}
-          onEditNote={(item) => handleOpenEditor(item, true)}
-          onAddToCollection={handleAddToCollection}
-          onMenuOpen={handleMenuOpen}
-          menuOpenIds={menuOpenIds}
-          onActionDone={handleItemActionDone}
-          onScroll={handleScroll}
-          isLoading={clipboard.isLoading}
-        />
+      {/* Knowledge Page */}
+      {activeTab === 'knowledge' && (
+        <div className="flex-1 overflow-hidden">
+          <KnowledgePage
+            pendingContent={pendingKnowledgeContent}
+            onPendingContentConsumed={() => setPendingKnowledgeContent(null)}
+          />
+        </div>
+      )}
+
+      {/* Clipboard content (hidden when knowledge tab is active) */}
+      <div className={activeTab === 'clipboard' ? 'contents' : 'hidden'}>
+        {/* Header: Search */}
+        <div className="app-header space-y-3">
+          <SearchToolbar
+            searchQuery={clipboard.searchQuery}
+            onSearchChange={clipboard.setSearchQuery}
+            searchCaseSensitive={clipboard.searchCaseSensitive}
+            onCaseSensitiveChange={clipboard.setSearchCaseSensitive}
+            searchRegex={clipboard.searchRegex}
+            onRegexChange={clipboard.setSearchRegex}
+          />
+
+          <FilterToolbar
+            activeFilter={clipboard.activeFilter as FilterType}
+            onFilterChange={(v) => clipboard.setActiveFilter(v)}
+            collections={clipboard.collections}
+            collectionFilterValue={getCollectionFilterValue()}
+            onCollectionFilterChange={handleCollectionFilterChange}
+            timeRange={clipboard.timeRange}
+            onTimeRangeChange={clipboard.setTimeRange}
+            sortMode={clipboard.sortMode}
+            onSortModeChange={clipboard.setSortMode}
+            totalCount={clipboard.totalCount}
+          />
+        </div>
+
+        {/* Clipboard List */}
+        <div className="flex-1 flex overflow-hidden">
+          <ClipboardList
+            items={clipboard.filteredHistory}
+            selectedIndex={clipboard.selectedIndex}
+            compactMode={settings.config.compact_mode}
+            searchQuery={clipboard.searchQuery}
+            searchRegex={clipboard.searchRegex}
+            searchCaseSensitive={clipboard.searchCaseSensitive}
+            collections={clipboard.collections}
+            currentCollectionView={clipboard.currentCollectionView}
+            onItemClick={handleItemClick}
+            onItemMouseEnter={clipboard.setSelectedIndex}
+            onTogglePin={clipboard.togglePin}
+            onToggleSnippet={clipboard.toggleSnippet}
+            onToggleSensitive={clipboard.toggleSensitive}
+            onPreview={clipboard.setPreviewItem}
+            onDelete={clipboard.deleteItem}
+            onEdit={(item) => handleOpenEditor(item)}
+            onEditNote={(item) => handleOpenEditor(item, true)}
+            onAddToCollection={handleAddToCollection}
+            onMenuOpen={handleMenuOpen}
+            menuOpenIds={menuOpenIds}
+            onActionDone={handleItemActionDone}
+            onScroll={handleScroll}
+            isLoading={clipboard.isLoading}
+            onSaveToKnowledge={handleSaveToKnowledge}
+          />
+        </div>
+
+        {/* Footer */}
+        <div className="px-3 py-1.5 bg-card border-t border-border flex justify-between items-center text-[10px] text-muted-foreground font-medium">
+          <div className="flex items-center gap-2">
+            <span>
+              <span className="bg-muted px-1 rounded">↑↓</span> {t('actions.navigate')}
+            </span>
+            <span>
+              <span className="bg-muted px-1 rounded">↵</span> {t('actions.paste')}
+            </span>
+            <span>
+              <span className="bg-muted px-1 rounded">Space</span> {t('actions.preview')}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1">
+            {updater.isReadyToRestart && (
+              <button
+                onClick={() => updater.openUpdateDialog()}
+                className="flex items-center gap-1 px-1.5 rounded-full bg-orange-500/10 text-orange-600 hover:bg-orange-500/20 transition-colors cursor-pointer animate-pulse"
+              >
+                <Power className="w-3 h-3" />
+                <span>{t('updater.restartRequired')}</span>
+              </button>
+            )}
+            {updater.updateInfo && !updater.isReadyToRestart && (
+              <button
+                onClick={() => updater.openUpdateDialog()}
+                className="flex items-center gap-1 px-1.5 rounded-full bg-green-500/10 text-green-600 hover:bg-green-500/20 transition-colors cursor-pointer"
+              >
+                <span>v{updater.updateInfo.current_version}</span>
+                <ArrowUpDown className="w-3 h-3" />
+              </button>
+            )}
+            {!updater.updateInfo && <span className="opacity-60">v{updater.currentVersion}</span>}
+          </div>
+
+          <div className="flex items-center gap-1">
+            <span>{settings.config.shortcut}</span>
+            {clipboard.isLoading && <span className="text-xs">Loading...</span>}
+          </div>
+        </div>
       </div>
-
-      {/* Footer */}
-      <div className="px-3 py-1.5 bg-card border-t border-border flex justify-between items-center text-[10px] text-muted-foreground font-medium">
-        <div className="flex items-center gap-2">
-          <span>
-            <span className="bg-muted px-1 rounded">↑↓</span> {t('actions.navigate')}
-          </span>
-          <span>
-            <span className="bg-muted px-1 rounded">↵</span> {t('actions.paste')}
-          </span>
-          <span>
-            <span className="bg-muted px-1 rounded">Space</span> {t('actions.preview')}
-          </span>
-        </div>
-
-        <div className="flex items-center gap-1">
-          {updater.isReadyToRestart && (
-            <button
-              onClick={() => updater.openUpdateDialog()}
-              className="flex items-center gap-1 px-1.5 rounded-full bg-orange-500/10 text-orange-600 hover:bg-orange-500/20 transition-colors cursor-pointer animate-pulse"
-            >
-              <Power className="w-3 h-3" />
-              <span>{t('updater.restartRequired')}</span>
-            </button>
-          )}
-          {updater.updateInfo && !updater.isReadyToRestart && (
-            <button
-              onClick={() => updater.openUpdateDialog()}
-              className="flex items-center gap-1 px-1.5 rounded-full bg-green-500/10 text-green-600 hover:bg-green-500/20 transition-colors cursor-pointer"
-            >
-              <span>v{updater.updateInfo.current_version}</span>
-              <ArrowUpDown className="w-3 h-3" />
-            </button>
-          )}
-          {!updater.updateInfo && <span className="opacity-60">v{updater.currentVersion}</span>}
-        </div>
-
-        <div className="flex items-center gap-1">
-          <span>{settings.config.shortcut}</span>
-          {clipboard.isLoading && <span className="text-xs">Loading...</span>}
-        </div>
-      </div>
+      {/* end clipboard content */}
 
       {/* Toast */}
       {toastMessage && (

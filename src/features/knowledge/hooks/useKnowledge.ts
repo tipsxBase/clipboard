@@ -2,11 +2,7 @@ import { useState, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import type { KnowledgeGroup, KnowledgeItem } from '@/types';
 
-export type KnowledgeGroupFilter =
-  | 'all'
-  | 'ungrouped'
-  | 'archived'
-  | { groupId: number };
+export type KnowledgeGroupFilter = 'all' | 'ungrouped' | 'archived' | { groupId: number };
 
 export interface UseKnowledgeReturn {
   groups: KnowledgeGroup[];
@@ -79,7 +75,6 @@ export function useKnowledge(): UseKnowledgeReturn {
       const filter = groupFilterRef.current;
       const query = searchQueryRef.current || undefined;
 
-      let groupId: number | undefined;
       let includeUngrouped = false;
 
       if (filter === 'all') {
@@ -115,7 +110,7 @@ export function useKnowledge(): UseKnowledgeReturn {
       }
 
       // Group filter
-      groupId = (filter as { groupId: number }).groupId;
+      const groupId = (filter as { groupId: number }).groupId;
       const result = await invoke<KnowledgeItem[]>('list_knowledge_items', {
         query,
         knowledgeGroupId: groupId,
@@ -129,14 +124,11 @@ export function useKnowledge(): UseKnowledgeReturn {
     }
   }, []);
 
-  const handleSetGroupFilter = useCallback(
-    (filter: KnowledgeGroupFilter) => {
-      groupFilterRef.current = filter;
-      setGroupFilter(filter);
-      setSelectedItem(null);
-    },
-    []
-  );
+  const handleSetGroupFilter = useCallback((filter: KnowledgeGroupFilter) => {
+    groupFilterRef.current = filter;
+    setGroupFilter(filter);
+    setSelectedItem(null);
+  }, []);
 
   const handleSetSearchQuery = useCallback((q: string) => {
     searchQueryRef.current = q;

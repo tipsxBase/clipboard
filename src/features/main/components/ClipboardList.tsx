@@ -17,6 +17,7 @@ import {
   NotepadText,
   Scissors,
   Files,
+  BookOpen,
   Globe,
   Mail,
   Phone,
@@ -135,6 +136,7 @@ function ClipboardItemRow({
   onMenuOpen,
   isMenuOpen,
   onActionDone,
+  onSaveToKnowledge,
 }: {
   item: ClipboardItem;
   index: number;
@@ -158,6 +160,7 @@ function ClipboardItemRow({
   onMenuOpen: (id: number, isOpen: boolean) => void;
   isMenuOpen: boolean;
   onActionDone: () => void;
+  onSaveToKnowledge: (item: ClipboardItem) => void;
 }) {
   const { t } = useTranslation();
   const { formatTimeAgo } = useTimeAgo();
@@ -365,6 +368,20 @@ function ClipboardItemRow({
         >
           <FolderPlus className="w-3.5 h-3.5" />
         </Button>
+        {item.kind === 'text' && (
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-6 w-6 text-muted-foreground hover:text-primary"
+            title={t('knowledge.saveKnowledge')}
+            onClick={(e) => {
+              e.stopPropagation();
+              onSaveToKnowledge(item);
+            }}
+          >
+            <BookOpen className="w-3.5 h-3.5" />
+          </Button>
+        )}
         <Button
           size="icon"
           variant="ghost"
@@ -465,6 +482,7 @@ export function ClipboardList({
   onActionDone,
   onScroll,
   isLoading,
+  onSaveToKnowledge,
 }: {
   items: ClipboardItem[];
   selectedIndex: number;
@@ -489,6 +507,7 @@ export function ClipboardList({
   onActionDone: () => void;
   onScroll: (e: React.UIEvent<HTMLDivElement>) => void;
   isLoading: boolean;
+  onSaveToKnowledge: (item: ClipboardItem) => void;
 }) {
   const { t } = useTranslation();
 
@@ -536,6 +555,7 @@ export function ClipboardList({
           onMenuOpen={onMenuOpen}
           isMenuOpen={item.id ? menuOpenIds.has(item.id) : false}
           onActionDone={onActionDone}
+          onSaveToKnowledge={onSaveToKnowledge}
         />
       ))}
 
