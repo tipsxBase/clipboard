@@ -1,0 +1,13 @@
+{
+  "name": "clipboard-kb-mcp-server",
+  "version": "1.0.0",
+  "description": "MCP server exposing the Clipboard Manager knowledge base to Claude",
+  "type": "module",
+  "main": "index.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  }
+}

@@ -8,10 +8,7 @@ import { useState, useCallback } from 'react';
 import {
   Library,
   Star,
-  Clock,
-  Sparkles,
   Archive,
-  Settings,
   ChevronLeft,
   ChevronRight,
   FolderOpen,
@@ -22,6 +19,17 @@ import {
   Trash2,
   Check,
   X,
+  Heart,
+  Bookmark,
+  Tag,
+  Briefcase,
+  Home,
+  Code,
+  Book,
+  Lightbulb,
+  Pin,
+  Flag,
+  Box,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
@@ -31,17 +39,17 @@ import type { KnowledgeGroupFilter } from '../hooks/useKnowledge';
 const ICON_MAP: Record<string, React.ElementType> = {
   folder: Folder,
   star: Star,
-  heart: Star,
-  bookmark: Star,
-  tag: Star,
-  box: Folder,
-  briefcase: Folder,
-  home: Folder,
-  code: Folder,
-  book: Folder,
-  lightbulb: Star,
-  pin: Star,
-  flag: Star,
+  heart: Heart,
+  bookmark: Bookmark,
+  tag: Tag,
+  box: Box,
+  briefcase: Briefcase,
+  home: Home,
+  code: Code,
+  book: Book,
+  lightbulb: Lightbulb,
+  pin: Pin,
+  flag: Flag,
 };
 
 function GroupIcon({ icon, color }: { icon: string; color?: string }) {
@@ -57,7 +65,8 @@ interface KnowledgeSidebarProps {
   onDeleteGroup: (id: number) => Promise<void>;
   onUpdateGroup: (id: number, name: string, icon?: string, color?: string) => Promise<void>;
   onNewKnowledge: () => void;
-  onOpenSettings?: () => void;
+  /** When true: full-width, always expanded, auto height (for use inside left panel) */
+  integrated?: boolean;
 }
 
 const COLOR_OPTIONS = [
@@ -80,10 +89,12 @@ export function KnowledgeSidebar({
   onDeleteGroup,
   onUpdateGroup,
   onNewKnowledge,
-  onOpenSettings,
+  integrated = false,
 }: KnowledgeSidebarProps) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(true);
+  // In integrated mode always expand; override any local toggle
+  const effectiveExpanded = integrated ? true : expanded;
   const [isCreatingGroup, setIsCreatingGroup] = useState(false);
   const [newGroupName, setNewGroupName] = useState('');
   const [menuAnchor, setMenuAnchor] = useState<{ id: number; x: number; y: number } | null>(null);
@@ -136,52 +147,59 @@ export function KnowledgeSidebar({
     setEditingGroup(null);
   };
 
-  const sidebarWidth = expanded ? 'w-[200px]' : 'w-[56px]';
+  const sidebarWidth = integrated ? 'w-full' : effectiveExpanded ? 'w-[200px]' : 'w-[56px]';
 
   return (
     <>
       <div
         className={cn(
-          'glass-sidebar sidebar-collapse flex flex-col h-full select-none overflow-hidden',
+          'glass-sidebar sidebar-collapse flex flex-col select-none overflow-hidden',
+          integrated ? '' : 'h-full',
           sidebarWidth
         )}
       >
-        {/* Top: Logo + Toggle */}
-        <div className="flex items-center justify-between px-3 h-10 border-b border-border/30">
-          {expanded && (
-            <span className="text-xs font-semibold tracking-wide text-muted-foreground">
-              Clipboard
-            </span>
-          )}
-          <button
-            type="button"
-            onClick={toggleExpanded}
-            className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
-            title={expanded ? t('knowledge.collapseSidebar') : t('knowledge.expandSidebar')}
-          >
-            {expanded ? (
-              <ChevronLeft className="w-3.5 h-3.5" />
-            ) : (
-              <ChevronRight className="w-3.5 h-3.5" />
+        {/* Top: Logo + Toggle (hidden in integrated mode) */}
+        {!integrated && (
+          <div className="flex items-center justify-between px-3 h-10 border-b border-border/30">
+            {effectiveExpanded && (
+              <span className="text-xs font-semibold tracking-wide text-muted-foreground">
+                Clipboard
+              </span>
             )}
-          </button>
-        </div>
+            <button
+              type="button"
+              onClick={toggleExpanded}
+              className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
+              title={
+                effectiveExpanded ? t('knowledge.collapseSidebar') : t('knowledge.expandSidebar')
+              }
+            >
+              {effectiveExpanded ? (
+                <ChevronLeft className="w-3.5 h-3.5" />
+              ) : (
+                <ChevronRight className="w-3.5 h-3.5" />
+              )}
+            </button>
+          </div>
+        )}
 
-        {/* New Knowledge Button */}
-        <div className="px-2 py-2 border-b border-border/30">
-          <button
-            type="button"
-            onClick={onNewKnowledge}
-            className={cn(
-              'w-full flex items-center gap-2 px-2 py-2 rounded-lg text-xs font-medium transition-colors',
-              'text-primary hover:bg-primary/10',
-              expanded ? 'justify-start' : 'justify-center'
-            )}
-          >
-            <Plus className="w-4 h-4 shrink-0" />
-            {expanded && <span>{t('knowledge.newKnowledge')}</span>}
-          </button>
-        </div>
+        {/* New Knowledge Button — hidden in integrated mode (topbar already has it) */}
+        {!integrated && (
+          <div className="px-2 py-2 border-b border-border/30">
+            <button
+              type="button"
+              onClick={onNewKnowledge}
+              className={cn(
+                'w-full flex items-center gap-2 px-2 py-2 rounded-lg text-xs font-medium transition-colors',
+                'text-primary hover:bg-primary/10',
+                effectiveExpanded ? 'justify-start' : 'justify-center'
+              )}
+            >
+              <Plus className="w-4 h-4 shrink-0" />
+              {effectiveExpanded && <span>{t('knowledge.newKnowledge')}</span>}
+            </button>
+          </div>
+        )}
 
         {/* Navigation Items */}
         <nav className="flex-1 overflow-y-auto py-2 px-2 space-y-0.5">
@@ -191,13 +209,15 @@ export function KnowledgeSidebar({
             className={cn(
               'sidebar-item',
               isActive('all') && 'sidebar-item-active',
-              expanded ? 'justify-start' : 'justify-center'
+              effectiveExpanded ? 'justify-start' : 'justify-center'
             )}
             onClick={() => onFilterChange('all')}
-            title={!expanded ? t('knowledge.allKnowledge') : undefined}
+            title={!effectiveExpanded ? t('knowledge.allKnowledge') : undefined}
           >
             <Library className="w-4 h-4 shrink-0" />
-            {expanded && <span className="text-xs font-medium">{t('knowledge.allKnowledge')}</span>}
+            {effectiveExpanded && (
+              <span className="text-xs font-medium">{t('knowledge.allKnowledge')}</span>
+            )}
           </button>
 
           {/* Ungrouped */}
@@ -206,13 +226,13 @@ export function KnowledgeSidebar({
             className={cn(
               'sidebar-item',
               isActive('ungrouped') && 'sidebar-item-active',
-              expanded ? 'justify-start' : 'justify-center'
+              effectiveExpanded ? 'justify-start' : 'justify-center'
             )}
             onClick={() => onFilterChange('ungrouped')}
-            title={!expanded ? t('knowledge.ungrouped') : undefined}
+            title={!effectiveExpanded ? t('knowledge.ungrouped') : undefined}
           >
             <FolderOpen className="w-4 h-4 shrink-0" />
-            {expanded && <span className="text-xs">{t('knowledge.ungrouped')}</span>}
+            {effectiveExpanded && <span className="text-xs">{t('knowledge.ungrouped')}</span>}
           </button>
 
           {/* Divider */}
@@ -228,17 +248,17 @@ export function KnowledgeSidebar({
                     className={cn(
                       'sidebar-item',
                       isActive({ groupId: group.id }) && 'sidebar-item-active',
-                      expanded ? 'justify-start' : 'justify-center'
+                      effectiveExpanded ? 'justify-start' : 'justify-center'
                     )}
                     onClick={() => onFilterChange({ groupId: group.id })}
-                    title={!expanded ? group.name : undefined}
+                    title={!effectiveExpanded ? group.name : undefined}
                   >
                     <GroupIcon icon={group.icon} color={group.color} />
-                    {expanded && <span className="text-xs truncate">{group.name}</span>}
+                    {effectiveExpanded && <span className="text-xs truncate">{group.name}</span>}
                   </button>
 
                   {/* Context menu trigger */}
-                  {expanded && (
+                  {effectiveExpanded && (
                     <button
                       type="button"
                       className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover/item:opacity-100 p-1 rounded hover:bg-accent transition-opacity"
@@ -259,9 +279,12 @@ export function KnowledgeSidebar({
               ))}
             </div>
           )}
+        </nav>
 
-          {/* Create group inline */}
-          {expanded && (
+        {/* Bottom section */}
+        <div className="border-t border-border/30 py-2 px-2 space-y-0.5">
+          {/* Create group inline — hidden in integrated mode (topbar already has it) */}
+          {effectiveExpanded && !integrated && (
             <>
               {isCreatingGroup ? (
                 <div className="flex items-center gap-2 px-2 py-1.5 sidebar-item">
@@ -309,61 +332,11 @@ export function KnowledgeSidebar({
                   onClick={() => setIsCreatingGroup(true)}
                 >
                   <Plus className="w-4 h-4 shrink-0" />
-                  {expanded && <span className="text-xs">{t('knowledge.newGroup')}</span>}
+                  {effectiveExpanded && <span className="text-xs">{t('knowledge.newGroup')}</span>}
                 </button>
               )}
             </>
           )}
-
-          {/* Divider */}
-          <div className="my-2 mx-2 border-t border-border/30" />
-
-          {/* AI Summary */}
-          <button
-            type="button"
-            className={cn(
-              'sidebar-item',
-              isActive('ai') && 'sidebar-item-active',
-              expanded ? 'justify-start' : 'justify-center'
-            )}
-            onClick={() => onFilterChange('ai')}
-            title={!expanded ? 'AI Summary' : undefined}
-          >
-            <Sparkles className="w-4 h-4 shrink-0 text-primary" />
-            {expanded && (
-              <span className="text-xs font-medium text-primary">{t('knowledge.aiSummary')}</span>
-            )}
-          </button>
-
-          {/* Favorites */}
-          <button
-            type="button"
-            className={cn(
-              'sidebar-item',
-              isActive('favorites') && 'sidebar-item-active',
-              expanded ? 'justify-start' : 'justify-center'
-            )}
-            onClick={() => onFilterChange('favorites')}
-            title={!expanded ? t('knowledge.favorites') : undefined}
-          >
-            <Star className="w-4 h-4 shrink-0" />
-            {expanded && <span className="text-xs">{t('knowledge.favorites')}</span>}
-          </button>
-
-          {/* Recent */}
-          <button
-            type="button"
-            className={cn(
-              'sidebar-item',
-              isActive('recent') && 'sidebar-item-active',
-              expanded ? 'justify-start' : 'justify-center'
-            )}
-            onClick={() => onFilterChange('recent')}
-            title={!expanded ? t('knowledge.recent') : undefined}
-          >
-            <Clock className="w-4 h-4 shrink-0" />
-            {expanded && <span className="text-xs">{t('knowledge.recent')}</span>}
-          </button>
 
           {/* Archived */}
           <button
@@ -371,26 +344,13 @@ export function KnowledgeSidebar({
             className={cn(
               'sidebar-item',
               isActive('archived') && 'sidebar-item-active',
-              expanded ? 'justify-start' : 'justify-center'
+              effectiveExpanded ? 'justify-start' : 'justify-center'
             )}
             onClick={() => onFilterChange('archived')}
-            title={!expanded ? t('knowledge.archived') : undefined}
+            title={!effectiveExpanded ? t('knowledge.archived') : undefined}
           >
             <Archive className="w-4 h-4 shrink-0" />
-            {expanded && <span className="text-xs">{t('knowledge.archived')}</span>}
-          </button>
-        </nav>
-
-        {/* Bottom: Settings */}
-        <div className="border-t border-border/30 px-2 py-2">
-          <button
-            type="button"
-            className={cn('sidebar-item', expanded ? 'justify-start' : 'justify-center')}
-            onClick={onOpenSettings}
-            title={!expanded ? t('settings.title') : undefined}
-          >
-            <Settings className="w-4 h-4 shrink-0" />
-            {expanded && <span className="text-xs">{t('settings.title')}</span>}
+            {effectiveExpanded && <span className="text-xs">{t('knowledge.archived')}</span>}
           </button>
         </div>
       </div>

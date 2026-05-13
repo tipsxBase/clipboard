@@ -13,6 +13,17 @@ export default defineConfig(async () => ({
     alias: {
       '@': path.resolve(__dirname, './src'),
     },
+    // Force a single instance of these packages across all deps to avoid
+    // "Duplicate use of selection JSON ID multiple-node" — caused by pnpm
+    // creating two peer-dep variants of @blocknote/core which each call
+    // ProseMirror's Selection.jsonID("multiple-node") at module init time.
+    dedupe: [
+      '@blocknote/core',
+      'prosemirror-state',
+      'prosemirror-view',
+      'prosemirror-model',
+      'prosemirror-transform',
+    ],
   },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`

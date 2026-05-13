@@ -90,6 +90,27 @@ pub struct KnowledgeItem {
     pub status: String,
     pub created_at: String,
     pub updated_at: String,
+    #[serde(default)]
+    pub word_count: u32,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub source_clipboard_id: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KnowledgeSearchResult {
+    pub id: i64,
+    pub title: String,
+    pub snippet: String,
+    pub knowledge_group_id: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KnowledgeBacklink {
+    pub id: i64,
+    pub title: String,
+    pub knowledge_group_id: Option<i64>,
 }
 
 fn default_knowledge_source_kind() -> String {
@@ -111,6 +132,10 @@ pub struct KnowledgeItemSeed {
     pub knowledge_group_id: Option<i64>,
     #[serde(default = "default_knowledge_source_kind")]
     pub source_kind: String,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub source_clipboard_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

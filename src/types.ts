@@ -89,16 +89,34 @@ export interface KnowledgeItem {
   summary: string;
   content: string;
   knowledge_group_id?: number;
-  source_kind: 'manual' | 'clipboard';
+  source_kind: 'manual' | 'clipboard' | 'history_text' | 'history_screenshot' | string;
   status: 'active' | 'archived';
   created_at: string;
   updated_at: string;
+  word_count: number;
+  tags: string[];
+  source_clipboard_id?: number;
 }
 
 export interface KnowledgeItemSeed {
   title: string;
   content: string;
   source_kind: string;
+  knowledge_group_id?: number;
+  tags?: string[];
+  source_clipboard_id?: number;
+}
+
+export interface KnowledgeSearchResult {
+  id: number;
+  title: string;
+  snippet: string;
+  knowledge_group_id?: number;
+}
+
+export interface KnowledgeBacklink {
+  id: number;
+  title: string;
   knowledge_group_id?: number;
 }
 

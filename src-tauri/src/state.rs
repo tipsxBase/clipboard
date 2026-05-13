@@ -31,4 +31,6 @@ pub struct AppState {
     pub storage_paths: Arc<StoragePaths>,
     pub rules_engine: Arc<RulesEngine>,
     pub update_info: Arc<Mutex<Option<UpdateInfo>>>,
+    /// Port of the MCP HTTP bridge server (127.0.0.1 only).
+    pub mcp_port: Arc<Mutex<u16>>,
 }

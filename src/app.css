@@ -1,8 +1,8 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
-@import "tw-animate-css";
-@import "shadcn/tailwind.css";
-@import "@fontsource-variable/geist";
+@import 'tw-animate-css';
+@import 'shadcn/tailwind.css';
+@import '@fontsource-variable/geist';
 /*
   ---break---
 */
@@ -145,9 +145,9 @@
   /* === Premium SaaS Design Tokens === */
 
   /* Background layers - Airy, spacious */
-  --bg-base: #F7F8FA;
+  --bg-base: #f7f8fa;
   --bg-sidebar: rgba(255, 255, 255, 0.72);
-  --bg-elevated: #FFFFFF;
+  --bg-elevated: #ffffff;
 
   /* Borders - Subtle, refined */
   --border-subtle: rgba(0, 0, 0, 0.06);
@@ -155,15 +155,15 @@
   --border-hover: rgba(0, 0, 0, 0.12);
 
   /* Accent Blue - Primary brand color */
-  --accent-blue: #3B82F6;
+  --accent-blue: #3b82f6;
   --accent-blue-soft: rgba(59, 130, 246, 0.08);
   --accent-blue-glow: rgba(59, 130, 246, 0.15);
 
   /* Text hierarchy */
-  --text-primary: #1F2937;
-  --text-secondary: #6B7280;
-  --text-muted: #9CA3AF;
-  --text-disabled: #D1D5DB;
+  --text-primary: #1f2937;
+  --text-secondary: #6b7280;
+  --text-muted: #9ca3af;
+  --text-disabled: #d1d5db;
 
   /* AI Visual - Elegant, restrained */
   --ai-gradient-start: rgba(99, 102, 241, 0.05);
@@ -257,7 +257,7 @@ body {
   }
 
   .app-titlebar {
-    @apply flex h-8 select-none items-center gap-1.5 border-b border-border/80 bg-card px-2.5 shadow-sm;
+    @apply flex h-9 select-none items-center gap-1.5 border-b border-border/80 bg-card px-2.5 shadow-sm;
   }
 
   .app-titlebar-brand {
@@ -270,6 +270,32 @@ body {
 
   .app-titlebar-action {
     @apply !h-8 !w-8 rounded-md border border-transparent text-muted-foreground hover:!border-transparent hover:!bg-transparent hover:!text-muted-foreground;
+  }
+
+  /* Resize handle cursors */
+  .resize-n {
+    cursor: n-resize;
+  }
+  .resize-s {
+    cursor: s-resize;
+  }
+  .resize-e {
+    cursor: e-resize;
+  }
+  .resize-w {
+    cursor: w-resize;
+  }
+  .resize-ne {
+    cursor: ne-resize;
+  }
+  .resize-nw {
+    cursor: nw-resize;
+  }
+  .resize-se {
+    cursor: se-resize;
+  }
+  .resize-sw {
+    cursor: sw-resize;
   }
 
   .app-titlebar-window-controls {
@@ -386,11 +412,7 @@ body {
     content: '';
     position: absolute;
     inset: 0;
-    background: radial-gradient(
-      circle at 50% 0%,
-      rgba(59, 130, 246, 0.06),
-      transparent 60%
-    );
+    background: radial-gradient(circle at 50% 0%, rgba(59, 130, 246, 0.06), transparent 60%);
     animation: ai-pulse 3s ease-in-out infinite;
     pointer-events: none;
   }
@@ -399,11 +421,7 @@ body {
     content: '';
     position: absolute;
     inset: -1px;
-    background: linear-gradient(
-      135deg,
-      rgba(99, 102, 241, 0.12),
-      rgba(59, 130, 246, 0.12)
-    );
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.12), rgba(59, 130, 246, 0.12));
     border-radius: inherit;
     z-index: -1;
     pointer-events: none;
@@ -419,12 +437,7 @@ body {
     content: '';
     position: absolute;
     inset: 0;
-    background: linear-gradient(
-      90deg,
-      transparent,
-      rgba(255, 255, 255, 0.3),
-      transparent
-    );
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
     background-size: 200% 100%;
     animation: shimmer 2s ease-in-out infinite;
     pointer-events: none;
@@ -432,11 +445,7 @@ body {
 
   /* AI Button */
   .ai-button {
-    background: linear-gradient(
-      135deg,
-      rgba(99, 102, 241, 0.08),
-      rgba(59, 130, 246, 0.08)
-    );
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(59, 130, 246, 0.08));
     border: 1px solid rgba(59, 130, 246, 0.15);
     color: var(--accent-blue);
     transition: all 0.2s ease;
@@ -445,16 +454,12 @@ body {
   .ai-button:hover {
     box-shadow: 0 0 16px rgba(59, 130, 246, 0.15);
     border-color: rgba(59, 130, 246, 0.25);
-    background: linear-gradient(
-      135deg,
-      rgba(99, 102, 241, 0.12),
-      rgba(59, 130, 246, 0.12)
-    );
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.12), rgba(59, 130, 246, 0.12));
   }
 
   /* Sidebar Navigation Item */
   .sidebar-item {
-    @apply flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200;
+    @apply w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200;
     color: var(--text-secondary);
   }
 
@@ -477,7 +482,9 @@ body {
   /* Focus Ring */
   .focus-ring:focus-visible {
     outline: none;
-    box-shadow: 0 0 0 2px var(--accent-blue-soft), 0 0 0 4px var(--accent-blue);
+    box-shadow:
+      0 0 0 2px var(--accent-blue-soft),
+      0 0 0 4px var(--accent-blue);
   }
 
   /* Spring-like transition for cards */
@@ -583,7 +590,8 @@ body {
 /* === AI Animations === */
 
 @keyframes ai-pulse {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 0.5;
   }
   50% {
@@ -601,7 +609,8 @@ body {
 }
 
 @keyframes glow-fade {
-  0%, 100% {
+  0%,
+  100% {
     box-shadow: 0 0 8px rgba(59, 130, 246, 0.1);
   }
   50% {
@@ -614,17 +623,17 @@ body {
   /* Keep existing dark mode variables */
 
   /* Premium dark mode adjustments */
-  --bg-base: #0F172A;
+  --bg-base: #0f172a;
   --bg-sidebar: rgba(15, 23, 42, 0.8);
-  --bg-elevated: #1E293B;
+  --bg-elevated: #1e293b;
 
   --border-subtle: rgba(255, 255, 255, 0.06);
   --border-default: rgba(255, 255, 255, 0.08);
   --border-hover: rgba(255, 255, 255, 0.12);
 
-  --text-primary: #F1F5F9;
-  --text-secondary: #94A3B8;
-  --text-muted: #64748B;
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
   --text-disabled: #475569;
 
   --ai-gradient-start: rgba(99, 102, 241, 0.1);
@@ -633,4 +642,34 @@ body {
 
   --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.2), 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-elevated: 0 4px 12px rgba(0, 0, 0, 0.3), 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+/* === BlockNote code block: fixed github-dark theme === */
+
+/* Use github-dark background for both light and dark modes
+   since tokens are always github-dark styled */
+.bn-block-content[data-content-type='codeBlock'] {
+  background-color: #24292e !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+/* Pre element styling */
+.bn-block-content[data-content-type='codeBlock'] pre {
+  background-color: #24292e !important;
+  color: #e1e4e8 !important;
+}
+
+/* Ensure Shiki token spans inherit proper styling */
+.bn-block-content[data-content-type='codeBlock'] pre span {
+  background-color: transparent !important;
+}
+
+/* Language selector: adjust text colour */
+.bn-block-content[data-content-type='codeBlock'] > div > select {
+  color: #e1e4e8 !important;
+  background-color: transparent !important;
+}
+.bn-block-content[data-content-type='codeBlock'] > div > select > option {
+  color: hsl(var(--foreground));
+  background-color: hsl(var(--popover));
 }

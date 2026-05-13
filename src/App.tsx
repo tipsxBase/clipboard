@@ -4,6 +4,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import MainWindow from './features/main/pages/MainWindow';
 import PopupWindow from './features/popup/pages/PopupWindow';
 import ScreenshotWindow from './features/screenshot/pages/ScreenshotWindow';
+import { ResizeHandles } from './features/main/components/ResizeHandles';
 
 type WindowType = 'main' | 'popup' | 'screenshot' | null;
 
@@ -54,5 +55,10 @@ export default function App() {
     }
   };
 
-  return <TooltipProvider>{renderWindow()}</TooltipProvider>;
+  return (
+    <TooltipProvider>
+      {renderWindow()}
+      {windowType === 'main' && <ResizeHandles />}
+    </TooltipProvider>
+  );
 }

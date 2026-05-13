@@ -3,17 +3,16 @@
  *
  * Main clipboard management window with full feature parity with Vue MainWindow.vue.
  */
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import { MemoryRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
-import { Power, ArrowUpDown, Command, Clipboard, BookOpen } from 'lucide-react';
+import { Command, Folder, Plus, Pause, Play, Trash2, BookOpen, Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { Titlebar } from '../components/Titlebar';
-import { KnowledgePage } from '@/features/knowledge/pages/KnowledgePage';
-import { SearchToolbar } from '../components/SearchToolbar';
-import { FilterToolbar } from '../components/FilterToolbar';
-import { ClipboardList } from '../components/ClipboardList';
+import { KnowledgePage, type KnowledgePageHandle } from '@/features/knowledge/pages/KnowledgePage';
+import { ClipboardPage } from './ClipboardPage';
 import { PreviewModal } from '../components/PreviewModal';
 import { SettingsDialog } from '../components/SettingsDialog';
 import { CollectionsManagerDialog } from '../components/CollectionsManagerDialog';
@@ -28,6 +27,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { ItemEditorDialog } from '@/components/ItemEditorDialog';
 import { PermissionDialog } from '@/components/PermissionDialog';
 import { UpdateDialog } from '@/components/UpdateDialog';
@@ -41,20 +41,11 @@ import { confirm } from '@/hooks/useConfirm';
 
 import type { ClipboardItem } from '@/types';
 
-// Filter type
-type FilterType =
-  | 'all'
-  | 'text'
-  | 'image'
-  | 'file'
-  | 'sensitive'
-  | 'snippet'
-  | 'url'
-  | 'email'
-  | 'code'
-  | 'phone';
+function MainWindowInner() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const isKnowledge = location.pathname === '/knowledge';
 
-export function MainWindow() {
   const { t } = useTranslation();
   const { toastMessage } = useToast();
 
@@ -79,19 +70,46 @@ export function MainWindow() {
   const [showCollectionsManager, setShowCollectionsManager] = useState(false);
   const [menuOpenIds, setMenuOpenIds] = useState<Set<number>>(new Set());
   const [showPermissionDialog, setShowPermissionDialog] = useState(false);
-  const [activeTab, setActiveTab] = useState<'clipboard' | 'knowledge'>('clipboard');
   const [pendingKnowledgeContent, setPendingKnowledgeContent] = useState<string | null>(null);
+  const [aiPanelOpen, setAiPanelOpen] = useState(false);
+  const [showNewGroupDialog, setShowNewGroupDialog] = useState(false);
+  const [newGroupName, setNewGroupName] = useState('');
 
-  const handleSaveToKnowledge = useCallback((item: ClipboardItem) => {
-    setPendingKnowledgeContent(item.content ?? '');
-    setActiveTab('knowledge');
+  // Ref to imperatively call KnowledgePage actions from Titlebar
+  const knowledgePageRef = useRef<KnowledgePageHandle>(null);
+
+  const handleSaveToKnowledge = useCallback(
+    (item: ClipboardItem) => {
+      setPendingKnowledgeContent(item.content ?? '');
+      navigate('/knowledge');
+    },
+    [navigate]
+  );
+
+  const handleNewKnowledgeFromTitlebar = useCallback(() => {
+    knowledgePageRef.current?.createNewKnowledge();
   }, []);
+
+  const handleNewGroupFromTitlebar = useCallback(() => {
+    setNewGroupName('');
+    setShowNewGroupDialog(true);
+  }, []);
+
+  const handleNewGroupSubmit = useCallback(async () => {
+    const name = newGroupName.trim();
+    if (name) {
+      await knowledgePageRef.current?.createNewGroup(name);
+      setNewGroupName('');
+      setShowNewGroupDialog(false);
+    }
+  }, [newGroupName]);
 
   // Refs for tracking and keyboard handler
   const lastFocusRefreshAtRef = useRef(0);
   const FOCUS_REFRESH_THROTTLE_MS = 600;
   const clipboardRef = useRef(clipboard);
   const settingsRef = useRef(settings);
+  const isKnowledgeRef = useRef(isKnowledge);
 
   // Keep refs updated
   useEffect(() => {
@@ -102,27 +120,9 @@ export function MainWindow() {
     settingsRef.current = settings;
   }, [settings]);
 
-  // Collection filter value
-  const getCollectionFilterValue = useCallback(() => {
-    if (clipboard.currentCollectionView === 'history') return 'history';
-    if (clipboard.currentCollectionView === 'all_collections') return 'all_collections';
-    if (clipboard.currentCollectionView === 'collection_detail' && clipboard.activeCollectionId) {
-      return `collection:${clipboard.activeCollectionId}`;
-    }
-    return 'history';
-  }, [clipboard.currentCollectionView, clipboard.activeCollectionId]);
-
-  const handleCollectionFilterChange = useCallback(
-    (value: string) => {
-      if (value === 'history') clipboard.openHistoryView();
-      else if (value === 'all_collections') clipboard.openAllCollectionsView();
-      else if (value.startsWith('collection:')) {
-        const id = parseInt(value.split(':')[1]);
-        clipboard.openCollectionView(id);
-      }
-    },
-    [clipboard]
-  );
+  useEffect(() => {
+    isKnowledgeRef.current = isKnowledge;
+  }, [isKnowledge]);
 
   // Handle menu open
   const handleMenuOpen = useCallback((id: number, isOpen: boolean) => {
@@ -141,24 +141,112 @@ export function MainWindow() {
     await rules.loadRules();
   }, [clipboard, rules]);
 
-  // Handle item click
-  const handleItemClick = useCallback(
-    (item: ClipboardItem, e: React.MouseEvent) => {
-      if (e.metaKey || e.ctrlKey) {
-        clipboard.toggleSelection(item);
-      } else {
-        clipboard.pasteItem(item, false);
-      }
-    },
-    [clipboard]
-  );
-
   // Handle edit
   const handleOpenEditor = useCallback((item: ClipboardItem | null, noteOnly = false) => {
     setEditingItem(item);
     setEditNoteOnly(noteOnly);
     setShowItemEditor(true);
   }, []);
+
+  // Compute context-aware Titlebar action buttons
+  const titlebarActions = useMemo(() => {
+    if (!isKnowledge) {
+      return (
+        <>
+          <Button
+            onClick={() => setShowCollectionsManager(true)}
+            size="icon"
+            variant="ghost"
+            className="app-titlebar-action"
+            title={t('actions.collections')}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <Folder className="w-3.5 h-3.5" />
+          </Button>
+          <Button
+            onClick={() => handleOpenEditor(null)}
+            size="icon"
+            variant="ghost"
+            className="app-titlebar-action"
+            title={t('actions.addItem')}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <Plus className="w-3.5 h-3.5" />
+          </Button>
+          <Button
+            onClick={settings.togglePause}
+            size="icon"
+            variant="ghost"
+            className="app-titlebar-action"
+            title={settings.isPaused ? t('actions.resumeRecording') : t('actions.pauseRecording')}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            {settings.isPaused ? (
+              <Play className="w-3.5 h-3.5 text-yellow-600" />
+            ) : (
+              <Pause className="w-3.5 h-3.5" />
+            )}
+          </Button>
+          <Button
+            onClick={() => setShowClearConfirm(true)}
+            size="icon"
+            variant="ghost"
+            className="app-titlebar-action hover:text-destructive"
+            title={t('actions.clearHistory')}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </Button>
+        </>
+      );
+    } else {
+      return (
+        <>
+          <Button
+            onClick={handleNewKnowledgeFromTitlebar}
+            variant="ghost"
+            size="default"
+            className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
+            title={t('knowledge.newKnowledge')}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <Plus className="size-3 shrink-0" />
+            {t('knowledge.newKnowledge')}
+          </Button>
+          <Button
+            onClick={handleNewGroupFromTitlebar}
+            variant="ghost"
+            size="default"
+            className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
+            title={t('knowledge.newGroup')}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <BookOpen className="size-3 shrink-0" />
+            {t('knowledge.newGroup')}
+          </Button>
+          <Button
+            onClick={() => setAiPanelOpen((v) => !v)}
+            size="icon"
+            variant="ghost"
+            className={`app-titlebar-action ${aiPanelOpen ? 'text-primary bg-primary/10' : ''}`}
+            title="AI Assistant (⌘I)"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+          </Button>
+        </>
+      );
+    }
+  }, [
+    isKnowledge,
+    aiPanelOpen,
+    settings.isPaused,
+    settings.togglePause,
+    t,
+    handleOpenEditor,
+    handleNewKnowledgeFromTitlebar,
+    handleNewGroupFromTitlebar,
+  ]);
 
   const handleCloseEditor = useCallback(() => {
     setShowItemEditor(false);
@@ -201,6 +289,8 @@ export function MainWindow() {
       const isComposing = e.isComposing;
 
       if ((isInput || isComposing) && e.key !== 'Escape') return;
+      // Skip clipboard navigation shortcuts on the knowledge route
+      if (isKnowledgeRef.current && e.key !== 'Escape') return;
 
       const clip = clipboardRef.current;
       const sett = settingsRef.current;
@@ -233,19 +323,25 @@ export function MainWindow() {
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      // ⌘I — toggle AI panel when on knowledge route
+      if ((e.metaKey || e.ctrlKey) && e.key === 'i' && isKnowledgeRef.current) {
+        const target = e.target as HTMLElement | null;
+        const isInput = !!target && ['INPUT', 'TEXTAREA'].includes(target.tagName);
+        if (!isInput) {
+          e.preventDefault();
+          setAiPanelOpen((v) => !v);
+        }
+      }
+    };
 
-  // Handle scroll for pagination
-  const handleScroll = useCallback(
-    (e: React.UIEvent<HTMLDivElement>) => {
-      const target = e.currentTarget;
-      const nearBottom = target.scrollHeight - target.scrollTop - target.clientHeight < 100;
-      if (nearBottom && !clipboard.isLoading) clipboard.loadMore();
-    },
-    [clipboard]
-  );
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keydown', handleGlobalKeyDown);
+    };
+  }, []);
 
   // Lifecycle - setup listeners (only run once on mount)
   useEffect(() => {
@@ -360,154 +456,43 @@ export function MainWindow() {
 
   return (
     <div className="app-shell flex flex-col select-none">
-      {/* Titlebar */}
-      <Titlebar
-        onOpenCollections={() => setShowCollectionsManager(true)}
-        onOpenEditor={() => handleOpenEditor(null)}
-        onOpenSettings={settings.openSettings}
-        onClearHistory={() => setShowClearConfirm(true)}
-        isPaused={settings.isPaused}
-        onTogglePause={settings.togglePause}
-      />
+      {/* Titlebar with integrated Segment Control */}
+      <Titlebar actions={titlebarActions} onOpenSettings={settings.openSettings} />
 
-      {/* Tab Bar */}
-      <div className="flex border-b border-border/40 bg-card shrink-0">
-        <button
-          type="button"
-          className={`flex items-center gap-1.5 px-4 py-2 text-xs font-medium transition-colors border-b-2 -mb-px ${
-            activeTab === 'clipboard'
-              ? 'border-primary text-primary'
-              : 'border-transparent text-muted-foreground hover:text-foreground'
-          }`}
-          onClick={() => setActiveTab('clipboard')}
-        >
-          <Clipboard className="w-3.5 h-3.5" />
-          {t('knowledge.tabClipboard')}
-        </button>
-        <button
-          type="button"
-          className={`flex items-center gap-1.5 px-4 py-2 text-xs font-medium transition-colors border-b-2 -mb-px ${
-            activeTab === 'knowledge'
-              ? 'border-primary text-primary'
-              : 'border-transparent text-muted-foreground hover:text-foreground'
-          }`}
-          onClick={() => setActiveTab('knowledge')}
-        >
-          <BookOpen className="w-3.5 h-3.5" />
-          {t('knowledge.tabKnowledge')}
-        </button>
+      {/* Main content — routed pages */}
+      <div className="flex-1 overflow-hidden flex flex-col min-h-0">
+        <Routes>
+          <Route
+            path="/clipboard"
+            element={
+              <ClipboardPage
+                clipboard={clipboard}
+                settings={settings}
+                updater={updater}
+                menuOpenIds={menuOpenIds}
+                onMenuOpen={handleMenuOpen}
+                onItemActionDone={handleItemActionDone}
+                onOpenItemEditor={handleOpenEditor}
+                onAddToCollection={handleAddToCollection}
+                onSaveToKnowledge={handleSaveToKnowledge}
+              />
+            }
+          />
+          <Route
+            path="/knowledge"
+            element={
+              <KnowledgePage
+                ref={knowledgePageRef}
+                pendingContent={pendingKnowledgeContent}
+                onPendingContentConsumed={() => setPendingKnowledgeContent(null)}
+                aiPanelOpen={aiPanelOpen}
+                onToggleAiPanel={() => setAiPanelOpen((v) => !v)}
+              />
+            }
+          />
+          <Route path="*" element={<Navigate to="/clipboard" replace />} />
+        </Routes>
       </div>
-
-      {/* Knowledge Page */}
-      {activeTab === 'knowledge' && (
-        <div className="flex-1 overflow-hidden">
-          <KnowledgePage
-            pendingContent={pendingKnowledgeContent}
-            onPendingContentConsumed={() => setPendingKnowledgeContent(null)}
-          />
-        </div>
-      )}
-
-      {/* Clipboard content (hidden when knowledge tab is active) */}
-      <div className={activeTab === 'clipboard' ? 'contents' : 'hidden'}>
-        {/* Header: Search */}
-        <div className="app-header space-y-3">
-          <SearchToolbar
-            searchQuery={clipboard.searchQuery}
-            onSearchChange={clipboard.setSearchQuery}
-            searchCaseSensitive={clipboard.searchCaseSensitive}
-            onCaseSensitiveChange={clipboard.setSearchCaseSensitive}
-            searchRegex={clipboard.searchRegex}
-            onRegexChange={clipboard.setSearchRegex}
-          />
-
-          <FilterToolbar
-            activeFilter={clipboard.activeFilter as FilterType}
-            onFilterChange={(v) => clipboard.setActiveFilter(v)}
-            collections={clipboard.collections}
-            collectionFilterValue={getCollectionFilterValue()}
-            onCollectionFilterChange={handleCollectionFilterChange}
-            timeRange={clipboard.timeRange}
-            onTimeRangeChange={clipboard.setTimeRange}
-            sortMode={clipboard.sortMode}
-            onSortModeChange={clipboard.setSortMode}
-            totalCount={clipboard.totalCount}
-          />
-        </div>
-
-        {/* Clipboard List */}
-        <div className="flex-1 flex overflow-hidden">
-          <ClipboardList
-            items={clipboard.filteredHistory}
-            selectedIndex={clipboard.selectedIndex}
-            compactMode={settings.config.compact_mode}
-            searchQuery={clipboard.searchQuery}
-            searchRegex={clipboard.searchRegex}
-            searchCaseSensitive={clipboard.searchCaseSensitive}
-            collections={clipboard.collections}
-            currentCollectionView={clipboard.currentCollectionView}
-            onItemClick={handleItemClick}
-            onItemMouseEnter={clipboard.setSelectedIndex}
-            onTogglePin={clipboard.togglePin}
-            onToggleSnippet={clipboard.toggleSnippet}
-            onToggleSensitive={clipboard.toggleSensitive}
-            onPreview={clipboard.setPreviewItem}
-            onDelete={clipboard.deleteItem}
-            onEdit={(item) => handleOpenEditor(item)}
-            onEditNote={(item) => handleOpenEditor(item, true)}
-            onAddToCollection={handleAddToCollection}
-            onMenuOpen={handleMenuOpen}
-            menuOpenIds={menuOpenIds}
-            onActionDone={handleItemActionDone}
-            onScroll={handleScroll}
-            isLoading={clipboard.isLoading}
-            onSaveToKnowledge={handleSaveToKnowledge}
-          />
-        </div>
-
-        {/* Footer */}
-        <div className="px-3 py-1.5 bg-card border-t border-border flex justify-between items-center text-[10px] text-muted-foreground font-medium">
-          <div className="flex items-center gap-2">
-            <span>
-              <span className="bg-muted px-1 rounded">↑↓</span> {t('actions.navigate')}
-            </span>
-            <span>
-              <span className="bg-muted px-1 rounded">↵</span> {t('actions.paste')}
-            </span>
-            <span>
-              <span className="bg-muted px-1 rounded">Space</span> {t('actions.preview')}
-            </span>
-          </div>
-
-          <div className="flex items-center gap-1">
-            {updater.isReadyToRestart && (
-              <button
-                onClick={() => updater.openUpdateDialog()}
-                className="flex items-center gap-1 px-1.5 rounded-full bg-orange-500/10 text-orange-600 hover:bg-orange-500/20 transition-colors cursor-pointer animate-pulse"
-              >
-                <Power className="w-3 h-3" />
-                <span>{t('updater.restartRequired')}</span>
-              </button>
-            )}
-            {updater.updateInfo && !updater.isReadyToRestart && (
-              <button
-                onClick={() => updater.openUpdateDialog()}
-                className="flex items-center gap-1 px-1.5 rounded-full bg-green-500/10 text-green-600 hover:bg-green-500/20 transition-colors cursor-pointer"
-              >
-                <span>v{updater.updateInfo.current_version}</span>
-                <ArrowUpDown className="w-3 h-3" />
-              </button>
-            )}
-            {!updater.updateInfo && <span className="opacity-60">v{updater.currentVersion}</span>}
-          </div>
-
-          <div className="flex items-center gap-1">
-            <span>{settings.config.shortcut}</span>
-            {clipboard.isLoading && <span className="text-xs">Loading...</span>}
-          </div>
-        </div>
-      </div>
-      {/* end clipboard content */}
 
       {/* Toast */}
       {toastMessage && (
@@ -627,6 +612,39 @@ export function MainWindow() {
         }}
       />
 
+      {/* New Group Dialog */}
+      <Dialog
+        open={showNewGroupDialog}
+        onOpenChange={(open) => {
+          setShowNewGroupDialog(open);
+          if (!open) setNewGroupName('');
+        }}
+      >
+        <DialogContent className="w-80">
+          <DialogHeader>
+            <DialogTitle>{t('knowledge.newGroup')}</DialogTitle>
+          </DialogHeader>
+          <Input
+            value={newGroupName}
+            onChange={(e) => setNewGroupName(e.target.value)}
+            placeholder={t('knowledge.groupNamePlaceholder')}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleNewGroupSubmit();
+              if (e.key === 'Escape') setShowNewGroupDialog(false);
+            }}
+            autoFocus
+          />
+          <DialogFooter className="flex gap-3 mt-2">
+            <Button onClick={() => setShowNewGroupDialog(false)} variant="ghost" className="flex-1">
+              {t('actions.cancel')}
+            </Button>
+            <Button onClick={handleNewGroupSubmit} className="flex-1">
+              {t('actions.save')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Clear Confirm Dialog */}
       <Dialog open={showClearConfirm} onOpenChange={setShowClearConfirm}>
         <DialogContent className="w-80">
@@ -666,6 +684,14 @@ export function MainWindow() {
         onRestart={updater.restartApp}
       />
     </div>
+  );
+}
+
+export function MainWindow() {
+  return (
+    <MemoryRouter initialEntries={['/clipboard']}>
+      <MainWindowInner />
+    </MemoryRouter>
   );
 }
 

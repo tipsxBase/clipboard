@@ -1,7 +1,9 @@
+mod claude_cli;
 mod commands;
 mod crypto;
 mod db;
 mod file_manager;
+mod mcp_http;
 mod models;
 mod monitor;
 mod ocr;
@@ -193,6 +195,7 @@ pub fn run() {
             });
 
             // 将状态交给 Tauri 管理
+            let mcp_port = mcp_http::start_mcp_http_server(db.clone());
             app.manage(AppState {
                 db: db.clone(),
                 config: config_arc.clone(),
@@ -210,6 +213,7 @@ pub fn run() {
                 storage_paths: Arc::new(storage_paths),
                 rules_engine: rules_engine.clone(),
                 update_info: Arc::new(Mutex::new(None)),
+                mcp_port: Arc::new(Mutex::new(mcp_port)),
             });
 
             // TODO: 截屏功能暂时隐藏，后续有时间完善后再启用
@@ -442,6 +446,8 @@ pub fn run() {
             get_knowledge_item,
             update_knowledge_item,
             delete_knowledge_item,
+            search_knowledge,
+            get_knowledge_backlinks,
             prepare_knowledge_seed_from_history,
             set_paste_stack,
             ocr_image,
@@ -464,6 +470,10 @@ pub fn run() {
             set_recording_screenshot_shortcut,
             restart_app,
             get_app_version,
+            check_claude_cli,
+            stream_claude_chat,
+            get_mcp_server_info,
+            stream_claude_chat_agent,
         ])
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::CloseRequested { api, .. } => {

@@ -1,15 +1,15 @@
-use chrono::Local;
 use base64::{engine::general_purpose, Engine as _};
+use chrono::Local;
 use std::fs;
 use std::io::Write;
 use std::process::Command;
-use tempfile::NamedTempFile;
 use tauri::{Emitter, Manager};
 use tauri_plugin_global_shortcut::GlobalShortcutExt;
+use tempfile::NamedTempFile;
 
 use crate::models::{
-    AppConfig, CaptureResult, ClipboardItem, Collection, KnowledgeGroup, KnowledgeItem,
-    KnowledgeItemSeed,
+    AppConfig, CaptureResult, ClipboardItem, Collection, KnowledgeBacklink, KnowledgeGroup,
+    KnowledgeItem, KnowledgeItemSeed, KnowledgeSearchResult,
 };
 use crate::ocr::recognize_text;
 use crate::rules::Rule;
@@ -50,7 +50,8 @@ fn decode_data_url_to_temp_file(data_url: &str) -> Result<NamedTempFile, String>
     let bytes = general_purpose::STANDARD
         .decode(payload)
         .map_err(|e| format!("Failed to decode data URL: {}", e))?;
-    let mut temp = NamedTempFile::new().map_err(|e| format!("Failed to create temp file: {}", e))?;
+    let mut temp =
+        NamedTempFile::new().map_err(|e| format!("Failed to create temp file: {}", e))?;
     temp.write_all(&bytes)
         .map_err(|e| format!("Failed to write temp image: {}", e))?;
     Ok(temp)
@@ -875,6 +876,8 @@ pub fn create_knowledge_item(
     knowledge_group_id: Option<i64>,
     source_kind: Option<String>,
     status: Option<String>,
+    tags: Option<Vec<String>>,
+    source_clipboard_id: Option<i64>,
 ) -> Result<KnowledgeItem, String> {
     state
         .db
@@ -885,6 +888,8 @@ pub fn create_knowledge_item(
             knowledge_group_id,
             source_kind.unwrap_or_else(|| "manual".to_string()),
             status,
+            tags.unwrap_or_default(),
+            source_clipboard_id,
         )
         .map_err(|e| e.to_string())
 }
@@ -898,7 +903,11 @@ pub fn list_knowledge_items(
 ) -> Result<Vec<KnowledgeItem>, String> {
     state
         .db
-        .list_knowledge_items(query, knowledge_group_id, include_ungrouped.unwrap_or(false))
+        .list_knowledge_items(
+            query,
+            knowledge_group_id,
+            include_ungrouped.unwrap_or(false),
+        )
         .map_err(|e| e.to_string())
 }
 
@@ -920,6 +929,7 @@ pub fn update_knowledge_item(
     knowledge_group_id: Option<i64>,
     source_kind: Option<String>,
     status: Option<String>,
+    tags: Option<Vec<String>>,
 ) -> Result<Option<KnowledgeItem>, String> {
     state
         .db
@@ -931,13 +941,17 @@ pub fn update_knowledge_item(
             knowledge_group_id,
             source_kind.unwrap_or_else(|| "manual".to_string()),
             status.unwrap_or_else(|| "active".to_string()),
+            tags.unwrap_or_default(),
         )
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn delete_knowledge_item(state: tauri::State<AppState>, id: i64) -> Result<(), String> {
-    state.db.delete_knowledge_item(id).map_err(|e| e.to_string())
+    state
+        .db
+        .delete_knowledge_item(id)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -956,11 +970,11 @@ pub fn prepare_knowledge_seed_from_history(
         "text" => Ok(KnowledgeItemSeed {
             title: "未命名知识".to_string(),
             summary: String::new(),
-            content: item
-                .html_content
-                .unwrap_or_else(|| item.content),
+            content: item.html_content.unwrap_or_else(|| item.content),
             knowledge_group_id,
             source_kind: "history_text".to_string(),
+            tags: vec![],
+            source_clipboard_id: item.id,
         }),
         "image" => {
             let data_url = image_path_to_data_url(&item.content)?;
@@ -970,11 +984,37 @@ pub fn prepare_knowledge_seed_from_history(
                 content: markdown_image_block(&data_url),
                 knowledge_group_id,
                 source_kind: "history_screenshot".to_string(),
+                tags: vec![],
+                source_clipboard_id: item.id,
             })
         }
         "file" => Err("File items are not supported for knowledge conversion".to_string()),
         _ => Err("Unsupported history item type".to_string()),
     }
+}
+
+#[tauri::command]
+pub fn search_knowledge(
+    state: tauri::State<AppState>,
+    query: String,
+    knowledge_group_id: Option<i64>,
+    limit: Option<usize>,
+) -> Result<Vec<KnowledgeSearchResult>, String> {
+    state
+        .db
+        .search_knowledge(&query, knowledge_group_id, limit.unwrap_or(20))
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_knowledge_backlinks(
+    state: tauri::State<AppState>,
+    item_id: i64,
+) -> Result<Vec<KnowledgeBacklink>, String> {
+    state
+        .db
+        .get_knowledge_backlinks(item_id)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1225,4 +1265,67 @@ pub fn set_recording_screenshot_shortcut(
 #[tauri::command]
 pub fn get_app_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
+}
+
+// ---------------------------------------------------------------------------
+// AI / Claude CLI commands
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub fn check_claude_cli() -> crate::claude_cli::ClaudeCliStatus {
+    crate::claude_cli::check_claude_cli()
+}
+
+#[tauri::command]
+pub async fn stream_claude_chat(
+    app: tauri::AppHandle,
+    request: crate::claude_cli::ChatStreamRequest,
+) -> Result<String, String> {
+    let session_id = tokio::task::spawn_blocking(move || {
+        crate::claude_cli::run_chat_stream(request, |event| {
+            let _ = app.emit("claude-stream", &event);
+        })
+    })
+    .await
+    .map_err(|e| format!("Task join error: {e}"))??;
+
+    Ok(session_id)
+}
+
+/// Returns the MCP HTTP bridge port and the resolved path to `mcp-server/index.js`.
+#[tauri::command]
+pub fn get_mcp_server_info(
+    app: tauri::AppHandle,
+    state: tauri::State<AppState>,
+) -> Result<serde_json::Value, String> {
+    let port = *state.mcp_port.lock().unwrap();
+    let server_path = app
+        .path()
+        .resource_dir()
+        .map_err(|e| e.to_string())?
+        .join("mcp-server")
+        .join("index.js");
+
+    Ok(serde_json::json!({
+        "port": port,
+        "server_path": server_path.to_string_lossy()
+    }))
+}
+
+/// Agent-mode chat: claude with MCP knowledge-base tools, streams same `claude-stream` events.
+#[tauri::command]
+pub async fn stream_claude_chat_agent(
+    app: tauri::AppHandle,
+    request: crate::claude_cli::AgentStreamRequest,
+) -> Result<String, String> {
+    let handle = app.clone();
+    let session_id = tokio::task::spawn_blocking(move || {
+        crate::claude_cli::run_agent_stream(request, |event| {
+            let _ = handle.emit("claude-stream", &event);
+        })
+    })
+    .await
+    .map_err(|e| format!("Task join error: {e}"))??;
+
+    Ok(session_id)
 }

@@ -1,15 +1,13 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useMemo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import type { KnowledgeGroup, KnowledgeItem } from '@/types';
+import type {
+  KnowledgeBacklink,
+  KnowledgeGroup,
+  KnowledgeItem,
+  KnowledgeSearchResult,
+} from '@/types';
 
-export type KnowledgeGroupFilter =
-  | 'all'
-  | 'ungrouped'
-  | 'archived'
-  | 'ai'
-  | 'favorites'
-  | 'recent'
-  | { groupId: number };
+export type KnowledgeGroupFilter = 'all' | 'ungrouped' | 'archived' | { groupId: number };
 
 export interface UseKnowledgeReturn {
   groups: KnowledgeGroup[];
@@ -36,6 +34,8 @@ export interface UseKnowledgeReturn {
     content?: string;
     knowledge_group_id?: number;
     source_kind?: string;
+    tags?: string[];
+    source_clipboard_id?: number;
   }) => Promise<KnowledgeItem>;
 
   updateItem: (params: {
@@ -45,6 +45,7 @@ export interface UseKnowledgeReturn {
     content?: string;
     knowledge_group_id?: number;
     status?: string;
+    tags?: string[];
   }) => Promise<void>;
 
   archiveItem: (id: number) => Promise<void>;
@@ -52,6 +53,14 @@ export interface UseKnowledgeReturn {
   deleteItem: (id: number) => Promise<void>;
 
   createFromClipboard: (clipboardItemId: number) => Promise<KnowledgeItem | null>;
+
+  searchKnowledge: (
+    query: string,
+    groupId?: number,
+    limit?: number
+  ) => Promise<KnowledgeSearchResult[]>;
+  getBacklinks: (itemId: number) => Promise<KnowledgeBacklink[]>;
+  getAllTags: () => string[];
 }
 
 export function useKnowledge(): UseKnowledgeReturn {
@@ -179,6 +188,8 @@ export function useKnowledge(): UseKnowledgeReturn {
       content?: string;
       knowledge_group_id?: number;
       source_kind?: string;
+      tags?: string[];
+      source_clipboard_id?: number;
     }): Promise<KnowledgeItem> => {
       const item = await invoke<KnowledgeItem>('create_knowledge_item', {
         title: params.title,
@@ -186,6 +197,8 @@ export function useKnowledge(): UseKnowledgeReturn {
         content: params.content ?? '',
         knowledgeGroupId: params.knowledge_group_id ?? null,
         sourceKind: params.source_kind ?? 'manual',
+        tags: params.tags ?? [],
+        sourceClipboardId: params.source_clipboard_id ?? null,
       });
       await loadItems();
       return item;
@@ -201,6 +214,7 @@ export function useKnowledge(): UseKnowledgeReturn {
       content?: string;
       knowledge_group_id?: number;
       status?: string;
+      tags?: string[];
     }) => {
       await invoke('update_knowledge_item', {
         id: params.id,
@@ -210,6 +224,7 @@ export function useKnowledge(): UseKnowledgeReturn {
         knowledgeGroupId: params.knowledge_group_id ?? null,
         sourceKind: 'manual',
         status: params.status ?? 'active',
+        tags: params.tags ?? [],
       });
       // Refresh selected item
       const updated = await invoke<KnowledgeItem | null>('get_knowledge_item', { id: params.id });
@@ -231,6 +246,7 @@ export function useKnowledge(): UseKnowledgeReturn {
         knowledgeGroupId: current.knowledge_group_id ?? null,
         sourceKind: current.source_kind,
         status: 'archived',
+        tags: current.tags ?? [],
       });
       setSelectedItem(null);
       await loadItems();
@@ -250,6 +266,7 @@ export function useKnowledge(): UseKnowledgeReturn {
         knowledgeGroupId: current.knowledge_group_id ?? null,
         sourceKind: current.source_kind,
         status: 'active',
+        tags: current.tags ?? [],
       });
       setSelectedItem(null);
       await loadItems();
@@ -284,6 +301,8 @@ export function useKnowledge(): UseKnowledgeReturn {
           content: seed.content,
           knowledgeGroupId: seed.knowledge_group_id ?? null,
           sourceKind: seed.source_kind,
+          tags: [],
+          sourceClipboardId: clipboardItemId,
         });
         await loadItems();
         return item;
@@ -293,6 +312,43 @@ export function useKnowledge(): UseKnowledgeReturn {
       }
     },
     [loadItems]
+  );
+
+  const searchKnowledge = useCallback(
+    async (query: string, groupId?: number, limit?: number): Promise<KnowledgeSearchResult[]> => {
+      if (!query.trim()) return [];
+      try {
+        return await invoke<KnowledgeSearchResult[]>('search_knowledge', {
+          query,
+          knowledgeGroupId: groupId ?? null,
+          limit: limit ?? 20,
+        });
+      } catch (e) {
+        console.error('search_knowledge failed:', e);
+        return [];
+      }
+    },
+    []
+  );
+
+  const getBacklinks = useCallback(async (itemId: number): Promise<KnowledgeBacklink[]> => {
+    try {
+      return await invoke<KnowledgeBacklink[]>('get_knowledge_backlinks', { itemId });
+    } catch (e) {
+      console.error('get_knowledge_backlinks failed:', e);
+      return [];
+    }
+  }, []);
+
+  const getAllTags = useMemo(
+    () => (): string[] => {
+      const tagSet = new Set<string>();
+      items.forEach((item) => {
+        (item.tags ?? []).forEach((tag) => tagSet.add(tag));
+      });
+      return Array.from(tagSet).sort();
+    },
+    [items]
   );
 
   return {
@@ -321,5 +377,8 @@ export function useKnowledge(): UseKnowledgeReturn {
     deleteItem,
 
     createFromClipboard,
+    searchKnowledge,
+    getBacklinks,
+    getAllTags,
   };
 }

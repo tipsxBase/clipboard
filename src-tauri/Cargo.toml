@@ -48,6 +48,7 @@ clipboard-rs = "0.3.1"
 screenshots = "0.8.10"
 tauri-plugin-upload = "2.4.0"
 tempfile = "3"
+tiny_http = "0.12"
 
 [dev-dependencies]
 

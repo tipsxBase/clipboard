@@ -2,30 +2,28 @@
  * Titlebar - React Component
  *
  * Window titlebar with macOS traffic lights or non-macOS controls,
- * brand label, and action buttons.
+ * Segment Control tab switcher, context-aware actions, and Settings.
  */
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, type ReactNode } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { Folder, Plus, Pause, Play, Settings, Trash2, Minus, Square, X } from 'lucide-react';
+import { LogicalSize } from '@tauri-apps/api/dpi';
+import { Settings, Minus, Square, X, Clipboard, BookOpen } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 export function Titlebar({
-  onOpenCollections,
-  onOpenEditor,
+  actions,
   onOpenSettings,
-  onClearHistory,
-  isPaused,
-  onTogglePause,
 }: {
-  onOpenCollections: () => void;
-  onOpenEditor: () => void;
+  actions?: ReactNode;
   onOpenSettings: () => void;
-  onClearHistory: () => void;
-  isPaused: boolean;
-  onTogglePause: () => void;
 }) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const activeTab = location.pathname === '/knowledge' ? 'knowledge' : 'clipboard';
   const [isMac, setIsMac] = useState(false);
 
   useEffect(() => {
@@ -43,8 +41,18 @@ export function Titlebar({
   }, []);
 
   const toggleMaximize = useCallback(async () => {
-    await getCurrentWindow().toggleMaximize();
-  }, []);
+    if (isMac) {
+      // macOS Zoom semantics: toggle between comfortable size and restored
+      const maximized = await getCurrentWindow().isMaximized();
+      if (maximized) {
+        await getCurrentWindow().unmaximize();
+      } else {
+        await getCurrentWindow().setSize(new LogicalSize(1000, 720));
+      }
+    } else {
+      await getCurrentWindow().toggleMaximize();
+    }
+  }, [isMac]);
 
   const startWindowDrag = useCallback(async (e: React.MouseEvent) => {
     if (e.button !== 0) return;
@@ -52,6 +60,7 @@ export function Titlebar({
   }, []);
 
   const handleTitlebarDoubleClick = useCallback(async () => {
+    // macOS HIG: double-click on titlebar does nothing (Zoom is via green dot)
     if (!isMac) {
       await toggleMaximize();
     }
@@ -90,77 +99,59 @@ export function Titlebar({
         </div>
       )}
 
-      <div className="app-titlebar-brand">Clipboard</div>
+      {/* Segment Control: Tab switcher */}
+      <div
+        className="flex items-center bg-muted/60 rounded-md p-0.5 gap-0.5 shrink-0"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <button
+          type="button"
+          className={cn(
+            'flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors',
+            activeTab === 'clipboard'
+              ? 'bg-background text-foreground shadow-sm'
+              : 'text-muted-foreground hover:text-foreground'
+          )}
+          onClick={() => navigate('/clipboard')}
+        >
+          <Clipboard className="w-3 h-3" />
+          {t('knowledge.tabClipboard')}
+        </button>
+        <button
+          type="button"
+          className={cn(
+            'flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors',
+            activeTab === 'knowledge'
+              ? 'bg-background text-foreground shadow-sm'
+              : 'text-muted-foreground hover:text-foreground'
+          )}
+          onClick={() => navigate('/knowledge')}
+        >
+          <BookOpen className="w-3 h-3" />
+          {t('knowledge.tabKnowledge')}
+        </button>
+      </div>
+
       <div className="app-titlebar-drag" />
 
-      {/* Action buttons */}
-      <div className="flex items-center gap-1 shrink-0">
-        <Button
-          onClick={onOpenCollections}
-          size="icon"
-          variant="ghost"
-          className="app-titlebar-action"
-          title={t('actions.collections')}
-          onMouseDown={(e) => e.stopPropagation()}
-        >
-          <Folder className="w-3.5 h-3.5" />
-        </Button>
-        <Button
-          onClick={onOpenEditor}
-          size="icon"
-          variant="ghost"
-          className="app-titlebar-action"
-          title={t('actions.addItem')}
-          onMouseDown={(e) => e.stopPropagation()}
-        >
-          <Plus className="w-3.5 h-3.5" />
-        </Button>
-        {/* TODO: 截屏功能暂时隐藏 */}
-        {/* <Button
-          onClick={onScreenshot}
-          size="icon"
-          variant="ghost"
-          className="app-titlebar-action"
-          title="Screenshot"
-          onMouseDown={(e) => e.stopPropagation()}
-        >
-          <Camera className="w-3.5 h-3.5" />
-        </Button> */}
-        <Button
-          onClick={onTogglePause}
-          size="icon"
-          variant="ghost"
-          className="app-titlebar-action"
-          title={isPaused ? t('actions.resumeRecording') : t('actions.pauseRecording')}
-          onMouseDown={(e) => e.stopPropagation()}
-        >
-          {isPaused ? (
-            <Play className="w-3.5 h-3.5 text-yellow-600" />
-          ) : (
-            <Pause className="w-3.5 h-3.5" />
-          )}
-        </Button>
-        <Button
-          onClick={onOpenSettings}
-          size="icon"
-          variant="ghost"
-          className="app-titlebar-action"
-          title={t('actions.settings')}
-          onMouseDown={(e) => e.stopPropagation()}
-        >
-          <Settings className="w-3.5 h-3.5" />
-        </Button>
-        <Button
-          onClick={onClearHistory}
-          size="icon"
-          variant="ghost"
-          className="app-titlebar-action hover:text-destructive"
-          title={t('actions.clearHistory')}
-          onMouseDown={(e) => e.stopPropagation()}
-        >
-          <Trash2 className="w-3.5 h-3.5" />
-        </Button>
-      </div>
+      {/* Context-aware actions (injected by MainWindow) */}
+      {actions && (
+        <div className="flex items-center gap-1 shrink-0" onMouseDown={(e) => e.stopPropagation()}>
+          {actions}
+        </div>
+      )}
+
+      {/* Settings button (always visible) */}
+      <Button
+        onClick={onOpenSettings}
+        size="icon"
+        variant="ghost"
+        className="app-titlebar-action shrink-0"
+        title={t('actions.settings')}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <Settings className="w-3.5 h-3.5" />
+      </Button>
 
       {/* Non-macOS window controls */}
       {!isMac && (

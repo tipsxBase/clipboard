@@ -1,5 +1,8 @@
 use crate::crypto::Crypto;
-use crate::models::{ClipboardItem, Collection, KnowledgeGroup, KnowledgeItem};
+use crate::models::{
+    ClipboardItem, Collection, KnowledgeBacklink, KnowledgeGroup, KnowledgeItem,
+    KnowledgeSearchResult,
+};
 use crate::rules::{Rule, RuleAction, RuleCondition};
 use chrono::Local;
 use regex::Regex;
@@ -111,6 +114,63 @@ impl Database {
             [],
         )?;
 
+        // Migration: add new columns if they don't exist yet
+        {
+            let existing_cols: Vec<String> = {
+                let mut stmt = conn.prepare("PRAGMA table_info(knowledge_items)")?;
+                let x: Vec<String> = stmt
+                    .query_map([], |row| row.get::<_, String>(1))?
+                    .filter_map(|r| r.ok())
+                    .collect();
+                x
+            };
+            if !existing_cols.iter().any(|c| c == "word_count") {
+                conn.execute(
+                    "ALTER TABLE knowledge_items ADD COLUMN word_count INTEGER NOT NULL DEFAULT 0",
+                    [],
+                )?;
+            }
+            if !existing_cols.iter().any(|c| c == "tags") {
+                conn.execute(
+                    "ALTER TABLE knowledge_items ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'",
+                    [],
+                )?;
+            }
+            if !existing_cols.iter().any(|c| c == "source_clipboard_id") {
+                conn.execute(
+                    "ALTER TABLE knowledge_items ADD COLUMN source_clipboard_id INTEGER",
+                    [],
+                )?;
+            }
+        }
+
+        // knowledge_item_links: bidirectional link index
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS knowledge_item_links (
+                source_id INTEGER NOT NULL,
+                target_id INTEGER NOT NULL,
+                PRIMARY KEY (source_id, target_id),
+                FOREIGN KEY (source_id) REFERENCES knowledge_items(id) ON DELETE CASCADE,
+                FOREIGN KEY (target_id) REFERENCES knowledge_items(id) ON DELETE CASCADE
+            )",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_kil_source ON knowledge_item_links (source_id)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_kil_target ON knowledge_item_links (target_id)",
+            [],
+        )?;
+
+        // FTS5 full-text search virtual table
+        conn.execute(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_fts
+             USING fts5(title, content, tags, content='knowledge_items', content_rowid='id', tokenize='unicode61')",
+            [],
+        )?;
+
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_knowledge_groups_sort_order
              ON knowledge_groups (sort_order ASC, updated_at DESC, created_at DESC, id DESC)",
@@ -137,6 +197,58 @@ impl Database {
         } else {
             trimmed.to_string()
         }
+    }
+
+    /// Count words in markdown content (strips frontmatter and markdown markers).
+    fn count_words(content: &str) -> u32 {
+        // Strip YAML frontmatter
+        let body = if content.starts_with("---") {
+            if let Some(end) = content[3..].find("\n---") {
+                &content[3 + end + 4..]
+            } else {
+                content
+            }
+        } else {
+            content
+        };
+        // Strip common markdown markers and count unicode scalar values
+        let stripped: String = body
+            .chars()
+            .filter(|c| !matches!(c, '#' | '*' | '_' | '`' | '~' | '[' | ']' | '(' | ')'))
+            .collect();
+        stripped.split_whitespace().count() as u32
+    }
+
+    /// Extract [[title]] wikilink targets from content.
+    fn extract_wikilinks(content: &str) -> Vec<String> {
+        let re = Regex::new(r"\[\[([^\]]+)\]\]").unwrap();
+        re.captures_iter(content)
+            .map(|cap| cap[1].to_string())
+            .collect()
+    }
+
+    /// Delete old links for source_id and insert new ones by looking up target titles.
+    fn update_item_links(conn: &Connection, source_id: i64, titles: &[String]) -> Result<()> {
+        conn.execute(
+            "DELETE FROM knowledge_item_links WHERE source_id = ?",
+            params![source_id],
+        )?;
+        for title in titles {
+            let target_id: Option<i64> = conn
+                .query_row(
+                    "SELECT id FROM knowledge_items WHERE title = ? LIMIT 1",
+                    params![title],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if let Some(tid) = target_id {
+                conn.execute(
+                    "INSERT OR IGNORE INTO knowledge_item_links (source_id, target_id) VALUES (?, ?)",
+                    params![source_id, tid],
+                )?;
+            }
+        }
+        Ok(())
     }
 
     /// Create a new database with all tables.
@@ -446,7 +558,11 @@ impl Database {
         Ok(items)
     }
 
-    pub fn insert_item(&self, item: &ClipboardItem, max_size: usize) -> Result<(Option<ClipboardItem>, Vec<ClipboardItem>)> {
+    pub fn insert_item(
+        &self,
+        item: &ClipboardItem,
+        max_size: usize,
+    ) -> Result<(Option<ClipboardItem>, Vec<ClipboardItem>)> {
         let conn = self.conn.lock().unwrap();
 
         let content_to_store = if item.is_sensitive && item.kind == "text" {
@@ -568,7 +684,9 @@ impl Database {
         };
 
         // Touch collection updated_at
-        let effective_collection_id = inserted_or_updated_item.as_ref().and_then(|i| i.collection_id);
+        let effective_collection_id = inserted_or_updated_item
+            .as_ref()
+            .and_then(|i| i.collection_id);
         Self::touch_collection_updated_at(&conn, effective_collection_id)?;
 
         // Prune if exceeding max_size
@@ -1069,16 +1187,21 @@ impl Database {
         knowledge_group_id: Option<i64>,
         source_kind: String,
         status: Option<String>,
+        tags: Vec<String>,
+        source_clipboard_id: Option<i64>,
     ) -> Result<KnowledgeItem> {
         let conn = self.conn.lock().unwrap();
         let created_at = Self::now_string();
         let title = Self::normalize_knowledge_title(title);
         let status = status.unwrap_or_else(|| "active".to_string());
+        let word_count = Self::count_words(&content);
+        let tags_json = serde_json::to_string(&tags).unwrap_or_else(|_| "[]".to_string());
 
         conn.execute(
             "INSERT INTO knowledge_items
-             (title, summary, content, knowledge_group_id, source_kind, status, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+             (title, summary, content, knowledge_group_id, source_kind, status,
+              created_at, updated_at, word_count, tags, source_clipboard_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             params![
                 title,
                 summary,
@@ -1087,11 +1210,25 @@ impl Database {
                 source_kind,
                 status,
                 created_at,
-                created_at
+                created_at,
+                word_count,
+                tags_json,
+                source_clipboard_id
             ],
         )?;
 
         let id = conn.last_insert_rowid();
+
+        // Update FTS5
+        conn.execute(
+            "INSERT OR REPLACE INTO knowledge_fts(rowid, title, content, tags) VALUES (?, ?, ?, ?)",
+            params![id, &title, &content, &tags_json],
+        )?;
+
+        // Update wikilinks
+        let wikilink_titles = Self::extract_wikilinks(&content);
+        Self::update_item_links(&conn, id, &wikilink_titles)?;
+
         Ok(KnowledgeItem {
             id,
             title,
@@ -1102,28 +1239,41 @@ impl Database {
             status,
             created_at: created_at.clone(),
             updated_at: created_at,
+            word_count,
+            tags,
+            source_clipboard_id,
+        })
+    }
+
+    fn row_to_knowledge_item(row: &rusqlite::Row) -> rusqlite::Result<KnowledgeItem> {
+        let tags_json: String = row
+            .get::<_, Option<String>>(9)?
+            .unwrap_or_else(|| "[]".to_string());
+        let tags: Vec<String> = serde_json::from_str(&tags_json).unwrap_or_default();
+        Ok(KnowledgeItem {
+            id: row.get(0)?,
+            title: row.get(1)?,
+            summary: row.get(2)?,
+            content: row.get(3)?,
+            knowledge_group_id: row.get(4)?,
+            source_kind: row.get(5)?,
+            status: row.get(6)?,
+            created_at: row.get(7)?,
+            updated_at: row.get(8)?,
+            tags,
+            word_count: row.get::<_, Option<u32>>(10)?.unwrap_or(0),
+            source_clipboard_id: row.get(11)?,
         })
     }
 
     pub fn get_knowledge_item(&self, id: i64) -> Result<Option<KnowledgeItem>> {
         let conn = self.conn.lock().unwrap();
         conn.query_row(
-            "SELECT id, title, summary, content, knowledge_group_id, source_kind, status, created_at, updated_at
+            "SELECT id, title, summary, content, knowledge_group_id, source_kind, status,
+             created_at, updated_at, tags, word_count, source_clipboard_id
              FROM knowledge_items WHERE id = ?",
             params![id],
-            |row| {
-                Ok(KnowledgeItem {
-                    id: row.get(0)?,
-                    title: row.get(1)?,
-                    summary: row.get(2)?,
-                    content: row.get(3)?,
-                    knowledge_group_id: row.get(4)?,
-                    source_kind: row.get(5)?,
-                    status: row.get(6)?,
-                    created_at: row.get(7)?,
-                    updated_at: row.get(8)?,
-                })
-            },
+            Self::row_to_knowledge_item,
         )
         .optional()
     }
@@ -1136,7 +1286,8 @@ impl Database {
     ) -> Result<Vec<KnowledgeItem>> {
         let conn = self.conn.lock().unwrap();
         let mut sql = String::from(
-            "SELECT id, title, summary, content, knowledge_group_id, source_kind, status, created_at, updated_at
+            "SELECT id, title, summary, content, knowledge_group_id, source_kind, status,
+             created_at, updated_at, tags, word_count, source_clipboard_id
              FROM knowledge_items WHERE 1=1",
         );
         let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
@@ -1163,19 +1314,7 @@ impl Database {
 
         let params_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
         let mut stmt = conn.prepare(&sql)?;
-        let rows = stmt.query_map(params_refs.as_slice(), |row| {
-            Ok(KnowledgeItem {
-                id: row.get(0)?,
-                title: row.get(1)?,
-                summary: row.get(2)?,
-                content: row.get(3)?,
-                knowledge_group_id: row.get(4)?,
-                source_kind: row.get(5)?,
-                status: row.get(6)?,
-                created_at: row.get(7)?,
-                updated_at: row.get(8)?,
-            })
-        })?;
+        let rows = stmt.query_map(params_refs.as_slice(), Self::row_to_knowledge_item)?;
 
         let mut items = Vec::new();
         for row in rows {
@@ -1193,13 +1332,19 @@ impl Database {
         knowledge_group_id: Option<i64>,
         source_kind: String,
         status: String,
+        tags: Vec<String>,
     ) -> Result<Option<KnowledgeItem>> {
         let conn = self.conn.lock().unwrap();
         let title = Self::normalize_knowledge_title(title);
         let updated_at = Self::now_string();
+        let word_count = Self::count_words(&content);
+        let tags_json = serde_json::to_string(&tags).unwrap_or_else(|_| "[]".to_string());
+
         conn.execute(
             "UPDATE knowledge_items
-             SET title = ?, summary = ?, content = ?, knowledge_group_id = ?, source_kind = ?, status = ?, updated_at = ?
+             SET title = ?, summary = ?, content = ?, knowledge_group_id = ?,
+                 source_kind = ?, status = ?, updated_at = ?,
+                 word_count = ?, tags = ?
              WHERE id = ?",
             params![
                 title,
@@ -1209,35 +1354,104 @@ impl Database {
                 source_kind,
                 status,
                 updated_at,
+                word_count,
+                tags_json,
                 id
             ],
         )?;
 
+        // Update FTS5
+        conn.execute(
+            "INSERT OR REPLACE INTO knowledge_fts(rowid, title, content, tags) VALUES (?, ?, ?, ?)",
+            params![id, &title, &content, &tags_json],
+        )?;
+
+        // Update wikilinks
+        let wikilink_titles = Self::extract_wikilinks(&content);
+        Self::update_item_links(&conn, id, &wikilink_titles)?;
+
         conn.query_row(
-            "SELECT id, title, summary, content, knowledge_group_id, source_kind, status, created_at, updated_at
+            "SELECT id, title, summary, content, knowledge_group_id, source_kind, status,
+             created_at, updated_at, tags, word_count, source_clipboard_id
              FROM knowledge_items WHERE id = ?",
             params![id],
-            |row| {
-                Ok(KnowledgeItem {
-                    id: row.get(0)?,
-                    title: row.get(1)?,
-                    summary: row.get(2)?,
-                    content: row.get(3)?,
-                    knowledge_group_id: row.get(4)?,
-                    source_kind: row.get(5)?,
-                    status: row.get(6)?,
-                    created_at: row.get(7)?,
-                    updated_at: row.get(8)?,
-                })
-            },
+            Self::row_to_knowledge_item,
         )
         .optional()
     }
 
     pub fn delete_knowledge_item(&self, id: i64) -> Result<()> {
         let conn = self.conn.lock().unwrap();
+        // Remove from FTS5 index
+        conn.execute("DELETE FROM knowledge_fts WHERE rowid = ?", params![id])?;
         conn.execute("DELETE FROM knowledge_items WHERE id = ?", params![id])?;
         Ok(())
+    }
+
+    pub fn search_knowledge(
+        &self,
+        query: &str,
+        knowledge_group_id: Option<i64>,
+        limit: usize,
+    ) -> Result<Vec<KnowledgeSearchResult>> {
+        let conn = self.conn.lock().unwrap();
+        let trimmed = query.trim();
+        if trimmed.is_empty() {
+            return Ok(vec![]);
+        }
+        let mut sql = String::from(
+            "SELECT ki.id, ki.title, snippet(knowledge_fts, 1, '<mark>', '</mark>', '...', 15), ki.knowledge_group_id
+             FROM knowledge_fts
+             JOIN knowledge_items ki ON ki.id = knowledge_fts.rowid
+             WHERE knowledge_fts MATCH ?",
+        );
+        let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(trimmed.to_string())];
+        if let Some(gid) = knowledge_group_id {
+            sql.push_str(" AND ki.knowledge_group_id = ?");
+            params_vec.push(Box::new(gid));
+        }
+        sql.push_str(" ORDER BY rank LIMIT ?");
+        params_vec.push(Box::new(limit as i64));
+
+        let params_refs: Vec<&dyn rusqlite::ToSql> =
+            params_vec.iter().map(|p| p.as_ref()).collect();
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map(params_refs.as_slice(), |row| {
+            Ok(KnowledgeSearchResult {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                snippet: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
+                knowledge_group_id: row.get(3)?,
+            })
+        })?;
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row?);
+        }
+        Ok(results)
+    }
+
+    pub fn get_knowledge_backlinks(&self, item_id: i64) -> Result<Vec<KnowledgeBacklink>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT ki.id, ki.title, ki.knowledge_group_id
+             FROM knowledge_item_links kl
+             JOIN knowledge_items ki ON ki.id = kl.source_id
+             WHERE kl.target_id = ?
+             ORDER BY ki.updated_at DESC",
+        )?;
+        let rows = stmt.query_map(params![item_id], |row| {
+            Ok(KnowledgeBacklink {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                knowledge_group_id: row.get(2)?,
+            })
+        })?;
+        let mut items = Vec::new();
+        for row in rows {
+            items.push(row?);
+        }
+        Ok(items)
     }
 
     // ==================== Rules Operations ====================
